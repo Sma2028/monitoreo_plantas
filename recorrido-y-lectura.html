@@ -1,0 +1,38 @@
+<section id="regla-lvdt-32" lang="es">
+  <style>
+    #regla-lvdt-32 .medida {margin:1rem 0 .2rem;display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
+    #regla-lvdt-32 .riel {position:relative;height:18px;margin:0 7px;background:linear-gradient(0deg,transparent 46%,var(--border) 46%,var(--border) 54%,transparent 54%)}
+    #regla-lvdt-32 .punto {position:absolute;top:3px;width:12px;height:12px;background:var(--viz-series-1);border-radius:50%;transform:translateX(-50%)}
+    #regla-lvdt-32 .lectura {background:var(--viz-series-2);border-radius:2px;transition:left .4s ease}
+    #regla-lvdt-32 .graduacion {display:flex;justify-content:space-between;color:var(--muted-foreground)}
+    #regla-lvdt-32 .riel::before,#regla-lvdt-32 .riel::after {content:"";position:absolute;top:3px;height:12px;width:1px;background:var(--border)}
+    #regla-lvdt-32 .riel::after {right:0}
+    @media(prefers-reduced-motion:reduce){#regla-lvdt-32 .lectura{transition:none}}
+  </style>
+  <h3>Distancia máxima desde el centro</h3>
+  <div class="viz-controls" role="group" aria-label="Frecuencia del movimiento">
+    <button type="button" class="btn" aria-pressed="false" data-rapida="no">Vibración lenta</button>
+    <button type="button" class="btn" aria-pressed="true" data-rapida="si">250 vibraciones por segundo</button>
+  </div>
+  <div class="medida"><span>Pieza real</span><strong>1 mm</strong></div>
+  <div class="riel" aria-hidden="true"><span class="punto" style="left:100%"></span></div>
+  <div class="medida"><span>Lectura del LVDT</span><strong data-valor aria-live="polite">0,71 mm</strong></div>
+  <div class="riel" aria-hidden="true"><span class="punto lectura" style="left:70.8%"></span></div>
+  <div class="graduacion text-small"><span>0 mm · centro</span><span>1 mm</span></div>
+</section>
+<script>
+(() => {
+  const raiz = document.getElementById("regla-lvdt-32");
+  const botones = raiz.querySelectorAll("button");
+  const marca = raiz.querySelector(".lectura");
+  const valor = raiz.querySelector("[data-valor]");
+  for (const boton of botones) {
+    boton.addEventListener("click", () => {
+      const rapida = boton.dataset.rapida === "si";
+      for (const otro of botones) otro.setAttribute("aria-pressed", String(otro === boton));
+      marca.style.left = rapida ? "70.8%" : "100%";
+      valor.textContent = rapida ? "0,71 mm" : "≈ 1 mm";
+    });
+  }
+})();
+</script>

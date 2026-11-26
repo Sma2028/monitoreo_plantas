@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c45">
+<title>Mi planta · Monitoreo MQTT</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%233fa66b' d='M16 30V16C16 8 22 3 30 2c0 9-5 14-14 14M16 20C16 13 11 9 3 8c0 7 5 12 13 12'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f3f1ea; --card:#ffffff; --ink:#1c2a23; --muted:#5f6f66; --line:#e3e0d6;
+  --forest:#1f5c45; --leaf:#3fa66b; --leaf-soft:#e3f3e8;
+  --red:#d24b43; --red-soft:#fbe7e5; --amber:#d99a1e; --amber-soft:#fbf1dc;
+  --cyan:#1596a6; --cyan-soft:#def3f5; --blue:#3567c9; --blue-soft:#e3ebfa;
+  --magenta:#a54aa8; --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
+  --r:16px;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#121a16;--card:#1a241f;--ink:#e6eee9;--muted:#9db0a5;--line:#2a3831;
+  --leaf-soft:#1d3428;--red-soft:#3a2120;--amber-soft:#3a3020;--cyan-soft:#173337;--blue-soft:#1d2840;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25)}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;background:var(--bg);color:var(--ink);
+  line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px 48px}
+
+/* ---------- Cabecera ---------- */
+header{background:var(--forest);color:#fff;padding:18px 0 54px;position:relative;overflow:hidden}
+header .wrap{display:flex;align-items:center;gap:14px;padding-bottom:0}
+header svg.logo{width:42px;height:42px;flex:none}
+header h1{font-size:1.35rem;margin:0;font-weight:700;letter-spacing:-.01em}
+header .sub{opacity:.8;font-size:.9rem}
+header .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:.82rem;
+  background:rgba(255,255,255,.14);white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+header .leaves{position:absolute;right:-30px;bottom:-40px;width:260px;opacity:.09;pointer-events:none}
+
+/* ---------- Pestañas ---------- */
+nav.tabs{display:flex;gap:4px;background:var(--card);border-radius:14px;padding:5px;box-shadow:var(--shadow);
+  margin:-30px 0 18px;position:relative;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{flex:1;min-width:max-content;border:0;background:none;padding:10px 14px;border-radius:10px;cursor:pointer;
+  color:var(--muted);font-weight:600;font-size:.92rem;display:flex;gap:7px;align-items:center;justify-content:center}
+nav.tabs button svg{width:18px;height:18px}
+nav.tabs button.on{background:var(--leaf-soft);color:var(--forest)}
+@media (prefers-color-scheme:dark){nav.tabs button.on{color:#9fe0b9}}
+section.page{display:none;animation:fade .25s ease}
+section.page.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---------- Banner de estado ---------- */
+.banner{display:flex;gap:16px;align-items:center;padding:18px 20px;border-radius:var(--r);background:var(--card);
+  box-shadow:var(--shadow);margin-bottom:18px;border-left:6px solid var(--leaf)}
+.banner .ico{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;flex:none;background:var(--leaf-soft);color:var(--leaf)}
+.banner .ico svg{width:28px;height:28px}
+.banner h2{margin:0;font-size:1.15rem}
+.banner p{margin:2px 0 0;color:var(--muted);font-size:.93rem}
+.banner .act{margin-left:auto}
+.banner.alerta{border-color:var(--red)} .banner.alerta .ico{background:var(--red-soft);color:var(--red);animation:pulse 1s infinite}
+.banner.reconocida{border-color:var(--amber)} .banner.reconocida .ico{background:var(--amber-soft);color:var(--amber)}
+.banner.inicio{border-color:var(--muted)} .banner.inicio .ico{background:var(--line);color:var(--muted)}
+@keyframes pulse{50%{transform:scale(1.07)}}
+
+/* ---------- Tarjetas ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px;position:relative}
+.card h3{margin:0;font-size:.88rem;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
+.card h3 svg{width:18px;height:18px;color:var(--leaf)}
+.val{font-size:2.2rem;font-weight:750;letter-spacing:-.02em;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.val small{font-size:1rem;color:var(--muted);font-weight:600;margin-left:3px}
+.tag{position:absolute;top:14px;right:14px;font-size:.74rem;font-weight:700;padding:3px 9px;border-radius:999px;
+  background:var(--leaf-soft);color:var(--leaf)}
+.tag.bad{background:var(--red-soft);color:var(--red)} .tag.fault{background:var(--cyan-soft);color:var(--cyan)}
+.tag.none{background:var(--line);color:var(--muted)}
+.card.alarm{outline:2px solid var(--red)}
+.bar{position:relative;height:10px;border-radius:6px;background:var(--line);margin:12px 0 6px;overflow:visible}
+.bar .zone{position:absolute;top:0;bottom:0;background:var(--leaf);opacity:.35;border-radius:6px}
+.bar .mark{position:absolute;top:-4px;width:4px;height:18px;border-radius:3px;background:var(--ink);transform:translateX(-2px);transition:left .5s}
+.scale{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted);margin-top:6px}
+.note.warn{color:var(--amber)}
+
+.row2{display:grid;grid-template-columns:1fr 1.4fr;gap:14px;margin-top:14px}
+@media (max-width:760px){.row2{grid-template-columns:1fr}}
+.events{list-style:none;margin:8px 0 0;padding:0;max-height:300px;overflow:auto}
+.events li{display:flex;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:.9rem}
+.events li:last-child{border:0}
+.events .k{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:none;background:var(--muted)}
+.events .k.k1{background:var(--red)} .events .k.k2{background:var(--leaf)} .events .k.k3{background:var(--cyan)}
+.events .k.k4{background:var(--magenta)} .events .k.k5{background:var(--blue)}
+.events time{margin-left:auto;color:var(--muted);font-size:.8rem;white-space:nowrap;padding-left:8px}
+.empty{color:var(--muted);font-size:.9rem;padding:10px 0}
+
+/* ---------- Formularios ---------- */
+.form-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;margin-bottom:14px}
+.form-card h2{margin:0 0 4px;font-size:1.1rem}
+.form-card > p{margin:0 0 14px;color:var(--muted);font-size:.92rem}
+table.ranges{width:100%;border-collapse:collapse}
+table.ranges th{font-size:.8rem;color:var(--muted);text-align:left;font-weight:600;padding:6px 6px}
+table.ranges td{padding:6px;border-top:1px solid var(--line);vertical-align:middle}
+table.ranges td:first-child{font-weight:600}
+table.ranges td .phys{display:block;font-size:.75rem;color:var(--muted);font-weight:400}
+input[type=number],input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1.5px solid var(--line);
+  border-radius:10px;background:var(--bg);outline:none;transition:border-color .15s}
+input:focus{border-color:var(--leaf)}
+input.err{border-color:var(--red);background:var(--red-soft)}
+@media (max-width:640px){
+  table.ranges thead{display:none}
+  table.ranges tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+  table.ranges td{border:0;padding:0}
+  table.ranges td:first-child{grid-column:1/-1}
+  table.ranges td[data-l]::before{content:attr(data-l);display:block;font-size:.72rem;color:var(--muted)}
+}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:14px}
+label.f span{display:block;font-size:.82rem;color:var(--muted);margin-bottom:4px;font-weight:600}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.btn{border:0;border-radius:11px;padding:11px 18px;font-weight:700;cursor:pointer;background:var(--leaf);color:#fff;
+  display:inline-flex;align-items:center;gap:8px;transition:transform .05s,filter .15s}
+.btn:hover{filter:brightness(1.06)} .btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.red{background:var(--red)} .btn.amber{background:var(--amber)}
+.btn:disabled{opacity:.55;cursor:wait}
+.msg{margin-top:12px;padding:10px 14px;border-radius:10px;font-size:.92rem;display:none}
+.msg.ok{display:block;background:var(--leaf-soft);color:var(--forest)}
+.msg.bad{display:block;background:var(--red-soft);color:var(--red)}
+@media (prefers-color-scheme:dark){.msg.ok{color:#9fe0b9}}
+
+/* ---------- Calibración ---------- */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.step{border:1.5px dashed var(--line);border-radius:14px;padding:16px}
+.step .n{width:30px;height:30px;border-radius:50%;background:var(--leaf);color:#fff;display:grid;place-items:center;font-weight:800;margin-bottom:8px}
+.step h4{margin:0 0 4px} .step p{margin:0 0 12px;color:var(--muted);font-size:.9rem}
+.live{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:14px 16px;background:var(--bg);border-radius:12px;margin-bottom:14px}
+.live b{font-size:1.8rem;font-variant-numeric:tabular-nums}
+
+/* ---------- Wi-Fi ---------- */
+.nets{list-style:none;padding:0;margin:10px 0 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;max-height:260px;overflow-y:auto}
+.nets li{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line)}
+.nets li:last-child{border:0} .nets li:hover{background:var(--leaf-soft)}
+.nets .sig{margin-left:auto;color:var(--muted);font-size:.82rem}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:.93rem}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-weight:600;word-break:break-all}
+
+/* ---------- Ayuda ---------- */
+.help h3{margin:18px 0 8px;font-size:1rem}
+.help p,.help li{font-size:.93rem}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:8px 0}
+.legend div{display:flex;gap:10px;align-items:center;padding:8px 10px;background:var(--bg);border-radius:10px;font-size:.9rem}
+.led{width:16px;height:16px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor;background:currentColor}
+.led.blink{animation:blink 1s steps(1) infinite} @keyframes blink{50%{opacity:.15}}
+details{background:var(--bg);border-radius:10px;padding:10px 14px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600}
+kbd{background:var(--line);border-radius:5px;padding:1px 6px;font-size:.85em}
+
+/* ---------- Modal de contraseña ---------- */
+.modal{position:fixed;inset:0;background:rgba(10,20,15,.55);display:none;place-items:center;padding:16px;z-index:10;backdrop-filter:blur(2px)}
+.modal.on{display:grid}
+.modal .box{background:var(--card);border-radius:18px;padding:22px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{margin:0 0 6px} .modal p{margin:0 0 14px;color:var(--muted);font-size:.9rem}
+.check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted);margin-top:10px}
+
+.demo{background:var(--amber-soft);color:var(--amber);text-align:center;font-size:.85rem;padding:7px;font-weight:600;display:none}
+.demo.on{display:block}
+footer{text-align:center;color:var(--muted);font-size:.8rem;margin-top:26px}
+@media (max-width:560px){
+  header{padding-top:14px}
+  header .wrap{flex-wrap:wrap}
+  header .sub{display:none}
+  header .right{margin-left:0;width:100%;justify-content:flex-start}
+  .banner{flex-wrap:wrap}
+  .banner .act{margin-left:0;width:100%}
+  .banner .act .btn{width:100%;justify-content:center}
+  .val{font-size:1.9rem}
+}
+
+/* ---------- Calibración ---------- */
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.pills button{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:9px 16px;font-weight:700;cursor:pointer;color:var(--muted)}
+.pills button.on{background:var(--forest);border-color:var(--forest);color:#fff}
+.calp{display:none}.calp.on{display:block}
+.calsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.calsum div{background:var(--bg);border-radius:10px;padding:9px 12px;font-size:.85rem}
+.calsum b{display:block;font-size:.95rem}.calsum .ok{color:var(--leaf)}.calsum .no{color:var(--amber)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:6px 0 14px}
+.kpis div{background:var(--bg);border-radius:12px;padding:10px 12px}
+.kpis span{display:block;font-size:.78rem;color:var(--muted)}.kpis b{font-size:1.35rem;font-variant-numeric:tabular-nums}
+.result{background:var(--leaf-soft);border-radius:10px;padding:10px 12px;margin:8px 0;font-weight:700;font-size:.95rem}
+.row{display:flex;gap:8px;align-items:center;margin:10px 0}.row input{flex:1}
+.bar.prog{height:12px;margin:8px 0 4px}.bar.prog div{height:100%;width:0;background:var(--leaf);border-radius:6px;transition:width .6s}
+table.mini{width:100%;border-collapse:collapse;font-size:.88rem;margin:6px 0}
+table.mini th,table.mini td{padding:6px;border-bottom:1px solid var(--line);text-align:left}
+table.mini button{border:0;background:none;color:var(--red);cursor:pointer;font-weight:700}
+select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg)}
+.pirbox{display:flex;align-items:center;gap:14px;background:var(--bg);border-radius:14px;padding:14px;margin:6px 0 12px}
+.pirdot{width:46px;height:46px;border-radius:50%;background:var(--line);flex:none;transition:background .2s,box-shadow .2s}
+.pirdot.on{background:var(--magenta);box-shadow:0 0 18px var(--magenta)}
+.live .sp{margin-left:auto}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(120px);background:var(--ink);color:var(--bg);
+  padding:11px 18px;border-radius:12px;font-size:.92rem;transition:transform .25s;z-index:20;max-width:90vw}
+.toast.on{transform:translateX(-50%) translateY(0)}
+/* ---------- Editor de rangos fácil ---------- */
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:6px}
+.preset{border:1.5px solid var(--line);background:var(--card);border-radius:14px;padding:12px;text-align:left;cursor:pointer;
+  display:flex;flex-direction:column;gap:2px;transition:border-color .15s,transform .05s}
+.preset:hover{border-color:var(--leaf)} .preset:active{transform:translateY(1px)}
+.preset.on{border-color:var(--leaf);background:var(--leaf-soft)}
+.preset .em{font-size:1.6rem;line-height:1}
+.preset b{font-size:.92rem;margin-top:4px} .preset small{color:var(--muted);font-size:.78rem;line-height:1.3}
+.re-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.re-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px}
+.re-head{display:flex;align-items:center;gap:10px}
+.re-head .em{font-size:1.4rem}
+.re-head h3{margin:0;font-size:1rem}
+.re-now{margin-left:auto;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--bg);color:var(--muted);white-space:nowrap}
+.re-now.in{background:var(--leaf-soft);color:var(--leaf)} .re-now.out{background:var(--red-soft);color:var(--red)}
+.re-mm{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 2px}
+.re-mm label{font-size:.8rem;color:var(--muted);font-weight:600}
+.re-mm .in{display:flex;align-items:center;gap:6px;margin-top:3px}
+.re-mm input{padding:8px 10px;font-weight:700;font-size:1.05rem;text-align:center;color:var(--ink)}
+.re-mm .u{color:var(--muted);font-size:.85rem;min-width:18px}
+.re-track{position:relative;height:44px;margin:4px 6px 0}
+.re-rail{position:absolute;left:0;right:0;top:19px;height:8px;border-radius:6px;background:linear-gradient(90deg,var(--red-soft),var(--line) 12%,var(--line) 88%,var(--red-soft))}
+.re-zone{position:absolute;top:19px;height:8px;border-radius:6px;background:var(--leaf)}
+.re-dot{position:absolute;top:12px;width:4px;height:22px;border-radius:3px;background:var(--ink);transform:translateX(-2px);transition:left .4s;display:none;z-index:1}
+.re-dot::after{content:"ahora";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:.65rem;color:var(--muted);font-weight:700}
+.re-track input[type=range]{position:absolute;left:-6px;right:-6px;width:calc(100% + 12px);top:10px;margin:0;height:26px;background:none;
+  -webkit-appearance:none;appearance:none;pointer-events:none;outline:none}
+.re-track input[type=range]::-webkit-slider-runnable-track{background:none;border:0}
+.re-track input[type=range]::-moz-range-track{background:none;border:0}
+.re-track input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:24px;height:24px;border-radius:50%;
+  background:#fff;border:3px solid var(--forest);box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:grab}
+.re-track input[type=range]::-moz-range-thumb{pointer-events:auto;width:18px;height:18px;border-radius:50%;background:#fff;
+  border:3px solid var(--forest);box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:grab}
+.re-track input[type=range]:focus-visible::-webkit-slider-thumb{outline:3px solid var(--leaf)}
+.re-scale{display:flex;justify-content:space-between;font-size:.74rem;color:var(--muted);margin:0 2px}
+.re-hint{font-size:.8rem;color:var(--muted);margin-top:6px}
+.savebar{position:sticky;bottom:12px;z-index:5;display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:12px 14px;
+  border-radius:14px;background:var(--forest);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.savebar.on{display:flex}
+.savebar span{flex:1;min-width:160px;font-weight:600}
+.savebar .btn{background:#fff;color:var(--forest)} .savebar .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.4)}
+.adv{margin-top:14px}
+.adv table{width:100%;border-collapse:collapse;font-size:.9rem}
+.adv td{padding:6px 4px;border-top:1px solid var(--line)} .adv td input{max-width:120px}
+
+.seg{display:inline-flex;gap:2px;background:var(--bg);border-radius:10px;padding:3px;flex-wrap:wrap}
+.seg button{border:0;background:none;border-radius:8px;padding:5px 10px;font-size:.8rem;font-weight:700;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--card);color:var(--forest);box-shadow:var(--shadow)}
+#chart{width:100%;height:220px;display:block;margin-top:10px}
+.card h3{flex-wrap:wrap}
+.checks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.checks .ck{background:var(--card);border-radius:14px;padding:12px;box-shadow:var(--shadow);text-align:center;font-size:.85rem;color:var(--muted)}
+.checks .ck b{display:block;font-size:1.5rem;line-height:1.2}
+.checks .ck.ok b{color:var(--leaf)} .checks .ck.bad b{color:var(--red)} .checks .ck.wait b{color:var(--amber)}
+.checks .ck small{display:block;margin-top:2px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <svg class="logo" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="14" fill="rgba(255,255,255,.14)"/>
+      <path d="M24 39V25" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M24 26c0-8 5-13 13-14 0 9-5 14-13 14Z" fill="#8fdcae"/>
+      <path d="M24 30c0-6-4-10-11-11 0 7 4 11 11 11Z" fill="#c7efd6"/></svg>
+    <div>
+      <h1 id="plantName">Mi planta</h1>
+      <div class="sub">Monitoreo por MQTT · broker.hivemq.com</div>
+    </div>
+    <div class="right">
+      <span class="chip" id="chipBroker"><span class="dot"></span><span>Conectando…</span></span>
+      <span class="chip" id="chipPlant"><span class="dot"></span><span>Planta: —</span></span>
+      <span class="chip" id="chipSeen">—</span>
+    </div>
+  </div>
+  <svg class="leaves" viewBox="0 0 200 200"><path fill="#fff" d="M100 190V100C100 50 140 15 195 10c0 60-35 95-95 95M100 130C100 85 70 60 15 55c0 45 30 75 85 75"/></svg>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button data-p="panel" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>Panel</button>
+    <button data-p="rangos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Mi planta</button>
+    <button data-p="ayuda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>Ayuda</button>
+  </nav>
+
+  <!-- ===================== PANEL ===================== -->
+  <section class="page on" id="p-panel">
+    <div class="checks" id="checks">
+      <div class="ck" id="ckNet"><b>…</b>Internet<small></small></div>
+      <div class="ck" id="ckBroker"><b>…</b>Broker<small></small></div>
+      <div class="ck" id="ckPlant"><b>…</b>Planta<small></small></div>
+    </div>
+    <div class="banner inicio" id="banner">
+      <div class="ico" id="bannerIco"></div>
+      <div><h2 id="bannerTitle">Conectando…</h2><p id="bannerText">Esperando los datos de la planta.</p></div>
+      <div class="act"><button class="btn red" id="btnAck" style="display:none">Reconocer alerta</button></div>
+    </div>
+    <div class="grid" id="cards"></div>
+    <div class="card" style="margin-top:14px">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Eventos</h3>
+      <ul class="events" id="events"><li class="empty">Aún no llegan eventos.</li></ul>
+    </div>
+  </section>
+
+  <!-- ===================== MI PLANTA ===================== -->
+  <section class="page" id="p-rangos">
+    <div class="form-card">
+      <h2>1. ¿Qué planta tienes?</h2>
+      <p>Toca un tipo de planta para cargar rangos de partida y luego ajústalos. Son valores orientativos: confírmalos con una guía de cultivo de tu especie.</p>
+      <div class="presets" id="presets"></div>
+    </div>
+    <div class="form-card" style="background:none;box-shadow:none;padding:0">
+      <h2 style="margin:4px 0">2. Ajusta los rangos</h2>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:.92rem">Arrastra los círculos o escribe los números. Verde = zona “todo bien”. La rayita negra es la lectura actual.</p>
+      <div class="re-grid" id="reGrid"></div>
+    </div>
+    <div class="form-card" style="margin-top:14px">
+      <h2>3. Nombre y enviar</h2>
+      <div class="fields"><label class="f"><span>Nombre de la planta</span><input type="text" id="fName" maxlength="32"></label></div>
+      <details class="adv"><summary>Opciones avanzadas</summary>
+        <div class="fields">
+          <label class="f"><span>Lecturas seguidas para alertar (1–20)</span><input type="number" id="fPers" min="1" max="20" step="1"></label>
+          <label class="f"><span>Período de muestreo (2–60 s)</span><input type="number" id="fPeriod" min="2" max="60" step="1"></label>
+        </div>
+        <p class="note">Histéresis: cuánto debe volver a entrar una variable para quitar la alerta. Se calcula sola al mover los rangos.</p>
+        <table><tbody id="advRows"></tbody></table>
+      </details>
+      <div class="msg" id="msgRanges"></div>
+      <div class="btns"><button class="btn" id="btnSave">Enviar a la planta</button></div>
+    </div>
+    <div class="savebar" id="saveBar"><span>Tienes cambios sin enviar</span>
+      <button class="btn ghost" id="btnReload">Descartar</button><button class="btn" id="btnSave2">Enviar a la planta</button></div>
+  </section>
+
+  <!-- ===================== AYUDA ===================== -->
+  <section class="page help" id="p-ayuda">
+    <div class="form-card">
+      <h2>¿Cómo funciona?</h2>
+      <p>El ESP32 se conecta al Wi-Fi y envía cada medición al broker público <kbd>broker.hivemq.com</kbd>. Esta página se conecta al mismo broker
+         (por <kbd>wss://</kbd>, puerto 8884) y muestra los datos. Cuando cambias los rangos o reconoces una alerta, la página envía un mensaje y el ESP32 lo aplica.</p>
+      <h3>Tópicos (son los mismos de <kbd>config_red.h</kbd>)</h3>
+      <table><tbody id="topicRows"></tbody></table>
+      <h3>Si no llegan datos</h3>
+      <ul>
+        <li>Mira los tres círculos del Panel: te dicen si falta internet, el broker o la planta.</li>
+        <li>Si la planta no tiene Wi-Fi, abre su propia red <b>Planta-XXXX</b> (clave <kbd>planta1234</kbd>). Conéctate, entra a <kbd>http://192.168.4.1</kbd> → <b>Ajustes → Wi-Fi con internet</b> y elige tu red.</li>
+        <li>Solo redes de 2,4 GHz: en iPhone activa <b>Maximizar compatibilidad</b> en Compartir Internet.</li>
+        <li>Mira el monitor serie: debe decir <kbd>WiFi conectado</kbd> y <kbd>¡Conectado al broker!</kbd>.</li>
+        <li>El celular o PC donde abres esta página necesita internet.</li>
+      </ul>
+      <h3>¿Qué significa el color del LED?</h3>
+      <ul>
+        <li><b>Verde</b>: todo en orden · <b>Rojo parpadeando + pitido</b>: alerta · <b>Amarillo</b>: alerta reconocida · <b>Cian</b>: falla de un sensor · <b>Magenta</b>: movimiento.</li>
+      </ul>
+      <p class="note">El broker es público: cualquiera que conozca los tópicos podría leerlos o escribir en ellos. Para la práctica está bien; para algo real usa un broker privado con usuario y clave.</p>
+    </div>
+  </section>
+
+  <footer>DR-PS-02 · Monitoreo de plantas por MQTT · <span id="foot">—</span></footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ================= CONFIGURACIÓN MQTT (debe coincidir con config_red.h del ESP32) ================= */
+const BROKER_URL = "wss://broker.hivemq.com:8884/mqtt";      // el ESP32 usa el puerto 1883; el navegador, 8884 (WebSocket seguro)
+const TOPIC_BASE = "instrumentacion/sofia/planta";
+const T = {
+  temperatura: TOPIC_BASE + "/temperatura",   // ESP32 → página
+  humedad:     TOPIC_BASE + "/humedad",
+  luz:         TOPIC_BASE + "/luz",
+  suelo:       TOPIC_BASE + "/suelo",
+  estado:      TOPIC_BASE + "/estado",
+  evento:      TOPIC_BASE + "/evento",
+  rangos:      TOPIC_BASE + "/rangos",
+  conexion:    TOPIC_BASE + "/conexion",
+  control:     TOPIC_BASE + "/control",          // página → ESP32 ("ack", "actualizar")
+  cambiar:     TOPIC_BASE + "/rangos/cambiar",   // página → ESP32 (JSON con rangos nuevos)
+};
+const TOPIC_VAR = { [T.temperatura]:"temp", [T.humedad]:"hum", [T.luz]:"lux", [T.suelo]:"soil" };
+
+const RE_VARS = [
+  {k:"temp", name:"Temperatura",       em:"🌡️", unit:"°C", dec:1, dom:[0,45],      phys:[-40,85],   step:0.5, gap:1},
+  {k:"hum",  name:"Humedad del aire",  em:"💨", unit:"%",  dec:0, dom:[0,100],     phys:[0,100],    step:1,   gap:4},
+  {k:"lux",  name:"Luz",               em:"☀️", unit:"lx", dec:0, dom:[10,65000],  phys:[0,65535],  step:10,  gap:50, log:true},
+  {k:"soil", name:"Humedad del suelo", em:"💧", unit:"%",  dec:0, dom:[0,100],     phys:[0,100],    step:1,   gap:4},
+];
+const RE_PRESETS = [
+  {em:"🌿", name:"Tropical de interior", sub:"Monstera, pothos, filodendro", r:{temp:[18,29],hum:[50,80],lux:[1000,10000],soil:[35,70]}},
+  {em:"🌵", name:"Suculentas y cactus",  sub:"Aloe, echeveria, cactus",       r:{temp:[15,32],hum:[20,50],lux:[5000,50000],soil:[10,35]}},
+  {em:"🪴", name:"Helechos",             sub:"Helecho de Boston, culantrillo", r:{temp:[16,26],hum:[60,90],lux:[500,5000],soil:[50,80]}},
+  {em:"🌸", name:"Orquídeas",            sub:"Phalaenopsis en interior",      r:{temp:[18,30],hum:[50,80],lux:[2000,15000],soil:[25,60]}},
+  {em:"🌱", name:"Aromáticas",           sub:"Albahaca, menta, cilantro",     r:{temp:[16,28],hum:[40,70],lux:[3000,30000],soil:[40,70]}},
+  {em:"🍅", name:"Huerta",               sub:"Tomate, lechuga, pimentón",     r:{temp:[15,30],hum:[50,80],lux:[10000,60000],soil:[45,80]}},
+];
+
+function makeRangeEditor(opt){
+  /* opt: {grid, presets, savebar, advanced, onSave(ranges), fmt(v,dec)} */
+  const fmtN = opt.fmt || ((v, d) => v == null ? "—" : Number(v).toLocaleString("es-CO", {minimumFractionDigits:d, maximumFractionDigits:d}));
+  let saved = null, cur = {}, now = {};
+  const ui = {};
+
+  const roundNice = (v, V) => {
+    if (!V.log) return Math.round(v / V.step) * V.step;
+    const p = Math.pow(10, Math.floor(Math.log10(Math.max(v, 1))) - 1);    // 2 cifras significativas
+    return Math.max(V.dom[0], Math.round(v / p) * p);
+  };
+  const toPos = (v, V) => {
+    const [lo, hi] = V.dom, x = Math.min(hi, Math.max(lo, v));
+    return V.log ? (Math.log10(x) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)) * 1000 : (x - lo) / (hi - lo) * 1000;
+  };
+  const fromPos = (p, V) => {
+    const [lo, hi] = V.dom, t = p / 1000;
+    return roundNice(V.log ? Math.pow(10, Math.log10(lo) + t * (Math.log10(hi) - Math.log10(lo))) : lo + t * (hi - lo), V);
+  };
+  const autoHyst = (r, V) => {                       // margen para volver a "normal"
+    const span = r.max - r.min;
+    if (r.hyst >= 0 && 2 * r.hyst < span && r.hyst > 0) return r.hyst;
+    let h = V.log ? roundNice(span * 0.05, V) : Math.max(V.step, Math.round(span * 0.05 / V.step) * V.step);
+    while (2 * h >= span && h > 0) h = V.log ? Math.floor(h / 2) : h - V.step;
+    return Math.max(0, +h.toFixed(2));
+  };
+
+  function draw(V){
+    const r = cur[V.k], u = ui[V.k];
+    const a = toPos(r.min, V), b = toPos(r.max, V);
+    u.sMin.value = a; u.sMax.value = b;
+    u.zone.style.left = a / 10 + "%"; u.zone.style.width = (b - a) / 10 + "%";
+    if (document.activeElement !== u.iMin) u.iMin.value = +r.min.toFixed(V.dec);
+    if (document.activeElement !== u.iMax) u.iMax.value = +r.max.toFixed(V.dec);
+    u.hyst.value = r.hyst;
+    const v = now[V.k];
+    if (v == null){ u.dot.style.display = "none"; u.now.className = "re-now"; u.now.textContent = "sin dato"; }
+    else {
+      u.dot.style.display = "block"; u.dot.style.left = toPos(v, V) / 10 + "%";
+      const inside = v >= r.min && v <= r.max;
+      u.now.className = "re-now " + (inside ? "in" : "out");
+      u.now.textContent = "ahora " + fmtN(v, V.dec) + " " + V.unit + (inside ? " ✓" : "");
+    }
+  }
+  function dirty(){
+    if (!saved) return false;
+    return RE_VARS.some(V => ["min","max","hyst"].some(f => Math.abs(saved[V.k][f] - cur[V.k][f]) > 1e-6));
+  }
+  function refreshBar(){
+    opt.savebar.classList.toggle("on", dirty());
+    opt.presets.querySelectorAll(".preset").forEach(b => {
+      const p = RE_PRESETS[b.dataset.i];
+      b.classList.toggle("on", RE_VARS.every(V => cur[V.k].min === p.r[V.k][0] && cur[V.k].max === p.r[V.k][1]));
+    });
+  }
+  function change(V, min, max, which){
+    const r = cur[V.k];
+    min = Math.max(V.phys[0], min); max = Math.min(V.phys[1], max);
+    if (max - min < V.gap){ if (which === "min") min = max - V.gap; else max = min + V.gap; }
+    r.min = +min.toFixed(2); r.max = +max.toFixed(2);
+    r.hyst = autoHyst(r, V);
+    draw(V); refreshBar();
+  }
+
+  // ---- Construcción ----
+  opt.grid.innerHTML = "";
+  for (const V of RE_VARS){
+    const c = document.createElement("div"); c.className = "re-card";
+    c.innerHTML = `<div class="re-head"><span class="em">${V.em}</span><h3>${V.name}</h3><span class="re-now">—</span></div>
+      <div class="re-mm"><label>Avisar si baja de<span class="in"><input type="number" step="${V.step}" class="mn"><span class="u">${V.unit}</span></span></label>
+        <label>o si sube de<span class="in"><input type="number" step="${V.step}" class="mx"><span class="u">${V.unit}</span></span></label></div>
+      <div class="re-track"><div class="re-rail"></div><div class="re-zone"></div><div class="re-dot"></div>
+        <input type="range" min="0" max="1000" step="1" class="smn" aria-label="${V.name} mínimo">
+        <input type="range" min="0" max="1000" step="1" class="smx" aria-label="${V.name} máximo"></div>
+      <div class="re-scale"><span>${fmtN(V.dom[0], 0)} ${V.unit}</span><span>${V.log ? "escala logarítmica" : ""}</span><span>${fmtN(V.dom[1], 0)} ${V.unit}</span></div>`;
+    opt.grid.appendChild(c);
+    const u = ui[V.k] = { now:c.querySelector(".re-now"), iMin:c.querySelector(".mn"), iMax:c.querySelector(".mx"),
+      sMin:c.querySelector(".smn"), sMax:c.querySelector(".smx"), zone:c.querySelector(".re-zone"), dot:c.querySelector(".re-dot") };
+    u.sMin.oninput = () => change(V, fromPos(+u.sMin.value, V), cur[V.k].max, "min");
+    u.sMax.oninput = () => change(V, cur[V.k].min, fromPos(+u.sMax.value, V), "max");
+    const typed = (inp, which) => { const n = parseFloat(String(inp.value).replace(",", ".")); if (isNaN(n)) return;
+      which === "min" ? change(V, n, cur[V.k].max, "min") : change(V, cur[V.k].min, n, "max"); };
+    u.iMin.onchange = () => typed(u.iMin, "min"); u.iMax.onchange = () => typed(u.iMax, "max");
+    u.iMin.onblur = u.iMax.onblur = () => draw(V);
+    // Histéresis (opciones avanzadas)
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${V.em} ${V.name}</td><td><input type="number" min="0" step="${V.step}"></td><td style="color:var(--muted)">${V.unit}</td>`;
+    u.hyst = tr.querySelector("input");
+    u.hyst.onchange = () => { const n = parseFloat(u.hyst.value); if (!isNaN(n) && n >= 0 && 2 * n < cur[V.k].max - cur[V.k].min) cur[V.k].hyst = n; draw(V); refreshBar(); };
+    opt.advanced.appendChild(tr);
+  }
+  RE_PRESETS.forEach((p, i) => {
+    const b = document.createElement("button"); b.className = "preset"; b.dataset.i = i; b.type = "button";
+    b.innerHTML = `<span class="em">${p.em}</span><b>${p.name}</b><small>${p.sub}</small>`;
+    b.onclick = () => { for (const V of RE_VARS){ cur[V.k].hyst = -1; change(V, p.r[V.k][0], p.r[V.k][1], "max"); } };
+    opt.presets.appendChild(b);
+  });
+
+  return {
+    set(ranges){                               // valores guardados en el equipo
+      saved = JSON.parse(JSON.stringify(ranges));
+      cur = JSON.parse(JSON.stringify(ranges));
+      RE_VARS.forEach(draw); refreshBar();
+    },
+    setIfClean(ranges){ if (!dirty()) this.set(ranges); },
+    current(values){ now = values || {}; if (saved) RE_VARS.forEach(draw); },
+    get(){ return JSON.parse(JSON.stringify(cur)); },
+    reset(){ if (saved) this.set(saved); },
+    isDirty: dirty,
+  };
+}
+
+
+/* ================= Cliente MQTT 3.1.1 sobre WebSocket (sin librerías) ================= */
+class MiniMQTT {
+  constructor(url, o){ this.url = url; this.o = Object.assign({keepalive:30}, o); this.buf = new Uint8Array(0); this.pid = 1; this.closed = false; }
+  static str(s){ const b = new TextEncoder().encode(s); const o = new Uint8Array(b.length + 2); o[0] = b.length >> 8; o[1] = b.length & 255; o.set(b, 2); return o; }
+  static len(n){ const o = []; do { let d = n % 128; n = Math.floor(n / 128); if (n > 0) d |= 128; o.push(d); } while (n > 0); return o; }
+  static pack(type, parts){
+    const body = parts.reduce((a, p) => a + p.length, 0), L = MiniMQTT.len(body);
+    const out = new Uint8Array(1 + L.length + body); out[0] = type; out.set(L, 1);
+    let i = 1 + L.length; for (const p of parts){ out.set(p, i); i += p.length; } return out;
+  }
+  connect(){
+    this.closed = false;
+    let ws;
+    try { ws = new WebSocket(this.url, ["mqtt"]); } catch(e){ this.o.onState && this.o.onState("error", "Dirección inválida: " + e.message); return; }
+    this.ws = ws; ws.binaryType = "arraybuffer";
+    this.o.onState && this.o.onState("connecting");
+    ws.onopen = () => {
+      const u = this.o.user, p = this.o.pass;
+      let flags = 0x02; if (u) flags |= 0x80; if (u && p) flags |= 0x40;
+      const parts = [MiniMQTT.str("MQTT"), new Uint8Array([4, flags, this.o.keepalive >> 8, this.o.keepalive & 255]), MiniMQTT.str(this.o.clientId)];
+      if (u) parts.push(MiniMQTT.str(u)); if (u && p) parts.push(MiniMQTT.str(p));
+      ws.send(MiniMQTT.pack(0x10, parts));
+    };
+    ws.onmessage = ev => { const d = new Uint8Array(ev.data), n = new Uint8Array(this.buf.length + d.length); n.set(this.buf); n.set(d, this.buf.length); this.buf = n; this.parse(); };
+    ws.onerror = () => {};
+    ws.onclose = () => {
+      clearInterval(this.ping); this.ok = false;
+      if (this.closed) return this.o.onState && this.o.onState("closed");
+      this.o.onState && this.o.onState("retry", this.lastErr || "Se perdió la conexión con el broker. Reintentando…");
+      this.retry = setTimeout(() => this.connect(), 5000);
+    };
+  }
+  parse(){
+    for (;;){
+      const b = this.buf; if (b.length < 2) return;
+      let mul = 1, len = 0, i = 1, d;
+      do { if (i >= b.length) return; d = b[i++]; len += (d & 127) * mul; mul *= 128; } while (d & 128);
+      if (b.length < i + len) return;
+      const type = b[0] >> 4, flags = b[0] & 15, pk = b.subarray(i, i + len);
+      this.buf = b.slice(i + len);
+      if (type === 2){                                   // CONNACK
+        const rc = pk[1];
+        if (rc === 0){ this.ok = true; this.lastErr = null; this.ping = setInterval(() => this.ws.readyState === 1 && this.ws.send(new Uint8Array([0xC0, 0])), this.o.keepalive * 800);
+                       this.o.onState && this.o.onState("connected"); }
+        else { this.lastErr = rc === 4 || rc === 5 ? "El broker rechazó el usuario o la clave" : "El broker rechazó la conexión (código " + rc + ")";
+               this.closed = true; this.o.onState && this.o.onState("error", this.lastErr); this.ws.close(); }
+      } else if (type === 3){                            // PUBLISH
+        const qos = (flags >> 1) & 3, tl = (pk[0] << 8) | pk[1];
+        const topic = new TextDecoder().decode(pk.subarray(2, 2 + tl));
+        let j = 2 + tl;
+        if (qos > 0){ const id = [pk[j], pk[j + 1]]; j += 2; if (qos === 1) this.ws.send(new Uint8Array([0x40, 2, id[0], id[1]])); }
+        const payload = new TextDecoder().decode(pk.subarray(j));
+        try { this.o.onMessage && this.o.onMessage(topic, payload, !!(flags & 1)); } catch(e){ console.error(e); }
+      }
+    }
+  }
+  subscribe(topic){ if (!this.ok) return; const id = this.pid++ & 0xffff || 1;
+    this.ws.send(MiniMQTT.pack(0x82, [new Uint8Array([id >> 8, id & 255]), MiniMQTT.str(topic), new Uint8Array([0])])); }
+  unsubscribe(topic){ if (!this.ok) return; const id = this.pid++ & 0xffff || 1;
+    this.ws.send(MiniMQTT.pack(0xA2, [new Uint8Array([id >> 8, id & 255]), MiniMQTT.str(topic)])); }
+  publish(topic, payload, retain){ if (!this.ok) return false;
+    this.ws.send(MiniMQTT.pack(0x30 | (retain ? 1 : 0), [MiniMQTT.str(topic), new TextEncoder().encode(payload)])); return true; }
+  end(){ this.closed = true; clearTimeout(this.retry); clearInterval(this.ping);
+    try { if (this.ws && this.ws.readyState === 1) this.ws.send(new Uint8Array([0xE0, 0])); this.ws && this.ws.close(); } catch(e){} }
+}
+
+
+/* ================= Utilidades ================= */
+const $ = s => document.querySelector(s);
+const el = (t, cls, html) => { const e = document.createElement(t); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const fmt = (v, d) => v == null ? "—" : Number(v).toLocaleString("es-CO", {minimumFractionDigits:d, maximumFractionDigits:d});
+function ago(s){ if (s == null) return "nunca"; if (s < 60) return "hace " + Math.max(0, Math.round(s)) + " s";
+  if (s < 3600) return "hace " + Math.round(s/60) + " min"; if (s < 86400) return "hace " + Math.round(s/3600) + " h"; return "hace " + Math.round(s/86400) + " d"; }
+function toast(t){ const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove("on"), 3500); }
+function showMsg(id, ok, text){ const e = $(id); e.className = "msg " + (ok ? "ok" : "bad"); e.textContent = text; }
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+                set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
+                del(k){ try { localStorage.removeItem(k); } catch(e){} } };
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+const signal = r => r >= -55 ? "excelente" : r >= -67 ? "buena" : r >= -78 ? "regular" : "débil";
+
+const VARS = [
+  {k:"temp", name:"Temperatura",       unit:"°C", dec:1, phys:[-40,85],  color:"#d9822b"},
+  {k:"hum",  name:"Humedad del aire",  unit:"%",  dec:0, phys:[0,100],   color:"#3567c9"},
+  {k:"lux",  name:"Luz",               unit:"lx", dec:0, phys:[0,65535], color:"#d99a1e", log:true},
+  {k:"soil", name:"Humedad del suelo", unit:"%",  dec:0, phys:[0,100],   color:"#1596a6"},
+];
+const ICONS = {
+  ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21V11M12 12c0-5 3-8 8-8 0 5-3 8-8 8ZM12 15c0-4-3-6-7-6 0 4 3 6 7 6Z"/></svg>',
+  bad:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17v.5"/></svg>',
+  mute:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9v6h4l5 4V5L8 9H4ZM17 9l4 6M21 9l-4 6"/></svg>',
+  wait:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  off:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M3 3l18 18"/></svg>',
+};
+const ICON_SVG = {
+  temp:'<path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/>',
+  hum:'<path d="M7 16a5 5 0 0 0 10 0c0-3-5-10-5-10S7 13 7 16Z"/>',
+  lux:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  soil:'<path d="M3 15h18M5 19h14"/><path d="M12 15V8M12 9c0-3 2-5 5-5 0 3-2 5-5 5ZM12 11c0-2-2-4-4-4 0 2 2 4 4 4Z"/>',
+};
+
+
+/* ================= Estado ================= */
+let cli = null, editor = null, conf = null, online = null, events = [], waitSave = null;
+let tel = { vars:{}, state:null }, telAt = 0;
+
+/* ================= Panel ================= */
+function buildCards(){
+  const c = $("#cards"); c.innerHTML = "";
+  for (const v of VARS){
+    const card = el("div", "card"); card.id = "c-" + v.k;
+    card.innerHTML = `<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICON_SVG[v.k]}</svg>${v.name}</h3>
+      <span class="tag none">—</span><div class="val">—<small>${v.unit}</small></div>
+      <div class="bar"><div class="zone"></div><div class="mark" style="display:none"></div></div>
+      <div class="scale"><span></span><span class="rg"></span><span></span></div><div class="note"></div>`;
+    c.appendChild(card);
+  }
+}
+function scaleFor(v, r){
+  let lo = r.min - (r.max - r.min) * .6, hi = r.max + (r.max - r.min) * .6;
+  if (v.log){ lo = Math.max(1, r.min / 4); hi = Math.min(v.phys[1], r.max * 4); }
+  lo = Math.max(v.phys[0], lo); hi = Math.min(v.phys[1], hi);
+  const t = x => v.log ? Math.log10(Math.max(1, x)) : x;
+  return x => Math.min(100, Math.max(0, (t(x) - t(lo)) / (t(hi) - t(lo)) * 100));
+}
+function renderCard(v){
+  const card = $("#c-" + v.k), tag = card.querySelector(".tag");
+  const d = tel && tel.vars ? tel.vars[v.k] : null, r = conf ? conf.ranges[v.k] : null;
+  card.querySelector(".val").innerHTML = (d && d.v != null && !d.fault ? fmt(d.v, v.dec) : "—") + `<small>${v.unit}</small>`;
+  card.classList.toggle("alarm", !!(d && d.alarm));
+  if (!d){ tag.className = "tag none"; tag.textContent = "Sin dato"; }
+  else if (d.fault){ tag.className = "tag fault"; tag.textContent = "Falla"; }
+  else if (d.v == null){ tag.className = "tag none"; tag.textContent = "Sin dato"; }
+  else if (d.alarm){ tag.className = "tag bad"; tag.textContent = d.dir < 0 ? "Bajo" : "Alto"; }
+  else if (r && (d.v < r.min || d.v > r.max)){ tag.className = "tag bad"; tag.textContent = "Fuera de rango"; }
+  else { tag.className = "tag"; tag.textContent = "En rango"; }
+  const z = card.querySelector(".zone"), m = card.querySelector(".mark");
+  if (r){ const pos = scaleFor(v, r), a = pos(r.min), b = pos(r.max);
+    z.style.left = a + "%"; z.style.width = (b - a) + "%";
+    card.querySelector(".rg").textContent = `rango ${fmt(r.min, v.dec)} – ${fmt(r.max, v.dec)} ${v.unit}`;
+    if (d && d.v != null && !d.fault){ m.style.display = ""; m.style.left = pos(d.v) + "%"; } else m.style.display = "none"; }
+  let note = "";
+  if (v.k === "soil" && tel && tel.soil) note = `${tel.soil.mv} mV` + (tel.soil.saturated ? " · ⚠ cerca del tope del ADC" : "");
+  if (v.k === "lux" && d && d.v != null && !d.fault) note = d.v < 200 ? "Poca luz" : d.v < 2000 ? "Luz de interior" : d.v < 20000 ? "Luz brillante indirecta" : "Sol directo";
+  if (d && d.fault) note = "El sensor no responde: revisa su conexión.";
+  card.querySelector(".note").textContent = note;
+}
+
+const STATE_TXT = {
+  normal:["Todo en orden", "Todas las variables están dentro de sus rangos."],
+  alerta:["¡Atención!", "Revisa tu planta y pulsa ACK en la placa o “Reconocer alerta” aquí."],
+  reconocida:["Alerta reconocida", "El zumbador está silenciado, pero la condición sigue presente."],
+  inicio:["Iniciando…", "La planta está tomando las primeras lecturas."],
+};
+function render(){
+  const haveData = telAt > 0, state = tel.state in STATE_TXT ? tel.state : "inicio";
+  let title, text, ico, cls = state;
+  if (!cli || !cli.ok){ title = "Conectando con el broker…"; text = "Necesitas internet en este dispositivo."; ico = ICONS.wait; cls = "inicio"; }
+  else if (online === false){ title = "La planta está desconectada"; text = "Revisa que esté encendida. Si cambiaste de Wi-Fi: conéctate a la red Planta-XXXX que abre la planta y elige tu Wi-Fi en Ajustes."; ico = ICONS.off; cls = "inicio"; }
+  else if (!haveData){ title = "Esperando datos de la planta…"; text = "Llegan cada pocos segundos cuando el ESP32 está conectado."; ico = ICONS.wait; cls = "inicio"; }
+  else {
+    [title, text] = STATE_TXT[state];
+    const bad = VARS.filter(v => { const d = tel.vars[v.k], r = conf && conf.ranges[v.k]; return d && !d.fault && r && (d.v < r.min || d.v > r.max); })
+                    .map(v => `${v.name.toLowerCase()} ${tel.vars[v.k].v < conf.ranges[v.k].min ? "baja" : "alta"}`);
+    const faults = VARS.filter(v => tel.vars[v.k] && tel.vars[v.k].fault).map(v => v.name.toLowerCase());
+    if (state === "alerta" && bad.length) title = "¡Atención! " + cap(bad.join(", "));
+    if (state === "reconocida" && bad.length) title = "Alerta reconocida: " + bad.join(", ");
+    if (state === "normal" && faults.length){ title = "Falla de sensor"; text = "Sin lectura de: " + faults.join(", ") + "."; }
+    ico = state === "alerta" ? ICONS.bad : state === "reconocida" ? ICONS.mute : state === "inicio" ? ICONS.wait : faults.length ? ICONS.bad : ICONS.ok;
+  }
+  $("#banner").className = "banner " + cls;
+  $("#bannerTitle").textContent = title; $("#bannerText").textContent = text; $("#bannerIco").innerHTML = ico;
+  $("#btnAck").style.display = tel.state === "alerta" && online !== false ? "" : "none";
+  for (const v of VARS) renderCard(v);
+  const pc = $("#chipPlant");
+  pc.lastChild.textContent = online === true ? "Planta en línea" : online === false ? "Planta desconectada" : "Planta: —";
+  pc.querySelector(".dot").style.color = online === true ? "#8fdcae" : online === false ? "#ffb4a8" : "#ffd27a";
+  $("#chipSeen").textContent = haveData ? "dato " + ago((Date.now() - telAt) / 1000) : "sin datos";
+  if (editor) editor.current(Object.fromEntries(VARS.map(v => [v.k, tel.vars[v.k] && !tel.vars[v.k].fault ? tel.vars[v.k].v : null])));
+  $("#foot").textContent = TOPIC_BASE;
+  renderChecks();
+}
+function setCk(id, st, sub){ const e = $(id); e.className = "ck " + st; e.querySelector("b").textContent = st === "ok" ? "✓" : st === "bad" ? "✗" : "…"; e.querySelector("small").textContent = sub; }
+function renderChecks(){
+  const net = navigator.onLine !== false, bro = !!(cli && cli.ok);
+  const fresh = telAt && (Date.now() - telAt) < 60000;
+  setCk("#ckNet", net ? "ok" : "bad", net ? "conectado" : "sin internet");
+  setCk("#ckBroker", bro ? "ok" : net ? "wait" : "bad", bro ? "conectado" : "conectando…");
+  setCk("#ckPlant", online === false ? "bad" : fresh || online === true ? "ok" : "wait",
+        online === false ? "apagada o sin Wi-Fi" : fresh ? "enviando datos" : online === true ? "en línea" : "esperando…");
+  // todo bien por un rato -> se oculta para no estorbar
+  $("#checks").style.display = net && bro && fresh && online !== false ? "none" : "";
+}
+function kindOf(msg){
+  const m = msg.toLowerCase();
+  if (m.startsWith("error")) return 3;
+  if (m.includes("falla")) return 3;
+  if (m.includes("fuera de rango")) return 1;
+  if (m.includes("volvió") || m.includes("en rango") || m.includes("recuperado")) return 2;
+  if (m.includes("movimiento")) return 4;
+  if (m.includes("wi-fi") || m.includes("broker") || m.includes("conectado")) return 5;
+  return 0;
+}
+function renderEvents(){
+  const ul = $("#events"); ul.innerHTML = "";
+  if (!events.length) return ul.appendChild(el("li", "empty", "Aún no llegan eventos. Aparecen aquí mientras la página está abierta."));
+  for (const e of events){
+    const li = el("li"); li.appendChild(el("span", "k k" + e.k));
+    const sp = el("span"); sp.textContent = e.msg; li.appendChild(sp);
+    const t = el("time"); t.textContent = new Date(e.at).toLocaleTimeString("es-CO", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+    li.appendChild(t); ul.appendChild(li);
+  }
+}
+
+/* ================= MQTT ================= */
+function setBrokerChip(state, text){
+  const c = $("#chipBroker"); c.lastChild.textContent = text;
+  c.querySelector(".dot").style.color = state === "ok" ? "#8fdcae" : state === "wait" ? "#ffd27a" : "#ffb4a8";
+}
+function conectar(){
+  cli = new MiniMQTT(BROKER_URL, { clientId: "Web_planta_" + Math.random().toString(16).slice(2, 8),
+    onState(s, msg){
+      if (s === "connecting") setBrokerChip("wait", "Conectando…");
+      if (s === "connected"){
+        setBrokerChip("ok", "Broker conectado");
+        cli.subscribe(TOPIC_BASE + "/#");          // todos los tópicos de la planta
+        cli.publish(T.control, "actualizar");      // pide al ESP32 que reenvíe todo
+      }
+      if (s === "retry") setBrokerChip("wait", "Reconectando…");
+      if (s === "error") setBrokerChip("bad", "Error");
+      render();
+    },
+    onMessage });
+  cli.connect();
+}
+function onMessage(topic, payload){
+  if (TOPIC_VAR[topic]){
+    const k = TOPIC_VAR[topic];
+    tel.vars[k] = payload === "falla" ? {v:null, fault:true} : {v: parseFloat(payload), fault:false};
+    telAt = Date.now(); online = online === false ? true : online;
+  }
+  else if (topic === T.estado){ const was = tel.state; tel.state = payload; telAt = Date.now();
+    if (payload === "alerta" && was && was !== "alerta") toast("⚠ ¡Alerta en tu planta!"); }
+  else if (topic === T.conexion){ online = payload === "online"; }
+  else if (topic === T.rangos){
+    try { conf = JSON.parse(payload); } catch(e){ return; }
+    $("#plantName").textContent = conf.name || "Mi planta"; document.title = (conf.name || "Mi planta") + " · Monitoreo MQTT";
+    if (waitSave){ editor.set(conf.ranges); fillOpts(true); } else { editor.setIfClean(conf.ranges); fillOpts(); }
+  }
+  else if (topic === T.evento){
+    events.unshift({msg: payload, k: kindOf(payload), at: Date.now()}); events = events.slice(0, 40); renderEvents();
+    if (waitSave && payload.startsWith("Error")){ clearTimeout(waitSave.t); waitSave = null; showMsg("#msgRanges", false, payload); }
+    if (waitSave && payload.startsWith("Rangos actualizados")){ clearTimeout(waitSave.t); waitSave = null;
+      showMsg("#msgRanges", true, "La planta recibió y guardó los rangos ✓"); toast("Rangos guardados ✓"); }
+  }
+  render();
+}
+
+/* ================= Mi planta ================= */
+function fillOpts(force){
+  if (!conf) return;
+  if (force || document.activeElement !== $("#fName")) $("#fName").value = conf.name || "";
+  $("#fPers").value = conf.persistence; $("#fPeriod").value = conf.period;
+}
+function enviarRangos(){
+  const body = { name:$("#fName").value.trim(), persistence:+$("#fPers").value, period:+$("#fPeriod").value, ranges:editor.get() };
+  if (!body.name) return showMsg("#msgRanges", false, "Escribe un nombre para la planta");
+  if (!(body.persistence >= 1 && body.persistence <= 20)) return showMsg("#msgRanges", false, "Lecturas seguidas: entre 1 y 20");
+  if (!(body.period >= 2 && body.period <= 60)) return showMsg("#msgRanges", false, "Período de muestreo: entre 2 y 60 s");
+  if (!cli || !cli.ok) return showMsg("#msgRanges", false, "No hay conexión con el broker todavía.");
+  if (online === false) return showMsg("#msgRanges", false, "La planta está desconectada: los rangos no llegarían.");
+  cli.publish(T.cambiar, JSON.stringify(body));
+  showMsg("#msgRanges", true, "Enviando a la planta…");
+  clearTimeout(waitSave && waitSave.t);
+  waitSave = { t: setTimeout(() => { waitSave = null; showMsg("#msgRanges", false, "La planta no respondió. Revisa que esté encendida y conectada."); }, 8000) };
+}
+
+/* ================= Arranque ================= */
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section.page").forEach(s => s.classList.toggle("on", s.id === "p-" + b.dataset.p));
+});
+$("#btnAck").onclick = () => { if (cli && cli.publish(T.control, "ack")) toast("Enviando “ack” a la planta…"); };
+$("#btnSave").onclick = $("#btnSave2").onclick = enviarRangos;
+$("#btnReload").onclick = () => { editor.reset(); $("#msgRanges").className = "msg"; };
+(() => { const tb = $("#topicRows");
+  const rows = [["Temperatura (°C)", T.temperatura, "ESP32 → página"], ["Humedad (%)", T.humedad, "ESP32 → página"], ["Luz (lx)", T.luz, "ESP32 → página"],
+    ["Suelo (%)", T.suelo, "ESP32 → página"], ["Estado", T.estado, "ESP32 → página"], ["Eventos", T.evento, "ESP32 → página"],
+    ["Rangos actuales (JSON)", T.rangos, "ESP32 → página"], ["Conexión", T.conexion, "ESP32 → página"],
+    ["Control (“ack”)", T.control, "página → ESP32"], ["Cambiar rangos (JSON)", T.cambiar, "página → ESP32"]];
+  for (const [a, b, c] of rows){ const tr = el("tr"); tr.innerHTML = `<td>${a}</td><td><kbd></kbd></td><td>${c}</td>`; tr.querySelector("kbd").textContent = b; tb.appendChild(tr); }
+})();
+buildCards();
+editor = makeRangeEditor({grid:$("#reGrid"), presets:$("#presets"), savebar:$("#saveBar"), advanced:$("#advRows"), fmt});
+window.addEventListener("online", render); window.addEventListener("offline", render);
+render(); renderEvents(); conectar(); setInterval(render, 5000);
+</script>
+</body>
+</html>

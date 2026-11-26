@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c45">
+<title>Monitoreo de plantas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%233fa66b' d='M16 30V16C16 8 22 3 30 2c0 9-5 14-14 14M16 20C16 13 11 9 3 8c0 7 5 12 13 12'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f3f1ea; --card:#ffffff; --ink:#1c2a23; --muted:#5f6f66; --line:#e3e0d6;
+  --forest:#1f5c45; --leaf:#3fa66b; --leaf-soft:#e3f3e8;
+  --red:#d24b43; --red-soft:#fbe7e5; --amber:#d99a1e; --amber-soft:#fbf1dc;
+  --cyan:#1596a6; --cyan-soft:#def3f5; --blue:#3567c9; --blue-soft:#e3ebfa;
+  --magenta:#a54aa8; --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
+  --r:16px;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#121a16;--card:#1a241f;--ink:#e6eee9;--muted:#9db0a5;--line:#2a3831;
+  --leaf-soft:#1d3428;--red-soft:#3a2120;--amber-soft:#3a3020;--cyan-soft:#173337;--blue-soft:#1d2840;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25)}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;background:var(--bg);color:var(--ink);
+  line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px 48px}
+
+/* ---------- Cabecera ---------- */
+header{background:var(--forest);color:#fff;padding:18px 0 54px;position:relative;overflow:hidden}
+header .wrap{display:flex;align-items:center;gap:14px;padding-bottom:0}
+header svg.logo{width:42px;height:42px;flex:none}
+header h1{font-size:1.35rem;margin:0;font-weight:700;letter-spacing:-.01em}
+header .sub{opacity:.8;font-size:.9rem}
+header .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:.82rem;
+  background:rgba(255,255,255,.14);white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+header .leaves{position:absolute;right:-30px;bottom:-40px;width:260px;opacity:.09;pointer-events:none}
+
+/* ---------- Pestañas ---------- */
+nav.tabs{display:flex;gap:4px;background:var(--card);border-radius:14px;padding:5px;box-shadow:var(--shadow);
+  margin:-30px 0 18px;position:relative;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{flex:1;min-width:max-content;border:0;background:none;padding:10px 14px;border-radius:10px;cursor:pointer;
+  color:var(--muted);font-weight:600;font-size:.92rem;display:flex;gap:7px;align-items:center;justify-content:center}
+nav.tabs button svg{width:18px;height:18px}
+nav.tabs button.on{background:var(--leaf-soft);color:var(--forest)}
+@media (prefers-color-scheme:dark){nav.tabs button.on{color:#9fe0b9}}
+section.page{display:none;animation:fade .25s ease}
+section.page.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---------- Banner de estado ---------- */
+.banner{display:flex;gap:16px;align-items:center;padding:18px 20px;border-radius:var(--r);background:var(--card);
+  box-shadow:var(--shadow);margin-bottom:18px;border-left:6px solid var(--leaf)}
+.banner .ico{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;flex:none;background:var(--leaf-soft);color:var(--leaf)}
+.banner .ico svg{width:28px;height:28px}
+.banner h2{margin:0;font-size:1.15rem}
+.banner p{margin:2px 0 0;color:var(--muted);font-size:.93rem}
+.banner .act{margin-left:auto}
+.banner.alerta{border-color:var(--red)} .banner.alerta .ico{background:var(--red-soft);color:var(--red);animation:pulse 1s infinite}
+.banner.reconocida{border-color:var(--amber)} .banner.reconocida .ico{background:var(--amber-soft);color:var(--amber)}
+.banner.inicio{border-color:var(--muted)} .banner.inicio .ico{background:var(--line);color:var(--muted)}
+@keyframes pulse{50%{transform:scale(1.07)}}
+
+/* ---------- Tarjetas ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px;position:relative}
+.card h3{margin:0;font-size:.88rem;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
+.card h3 svg{width:18px;height:18px;color:var(--leaf)}
+.val{font-size:2.2rem;font-weight:750;letter-spacing:-.02em;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.val small{font-size:1rem;color:var(--muted);font-weight:600;margin-left:3px}
+.tag{position:absolute;top:14px;right:14px;font-size:.74rem;font-weight:700;padding:3px 9px;border-radius:999px;
+  background:var(--leaf-soft);color:var(--leaf)}
+.tag.bad{background:var(--red-soft);color:var(--red)} .tag.fault{background:var(--cyan-soft);color:var(--cyan)}
+.tag.none{background:var(--line);color:var(--muted)}
+.card.alarm{outline:2px solid var(--red)}
+.bar{position:relative;height:10px;border-radius:6px;background:var(--line);margin:12px 0 6px;overflow:visible}
+.bar .zone{position:absolute;top:0;bottom:0;background:var(--leaf);opacity:.35;border-radius:6px}
+.bar .mark{position:absolute;top:-4px;width:4px;height:18px;border-radius:3px;background:var(--ink);transform:translateX(-2px);transition:left .5s}
+.scale{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted);margin-top:6px}
+.note.warn{color:var(--amber)}
+
+.row2{display:grid;grid-template-columns:1fr 1.4fr;gap:14px;margin-top:14px}
+@media (max-width:760px){.row2{grid-template-columns:1fr}}
+.events{list-style:none;margin:8px 0 0;padding:0;max-height:300px;overflow:auto}
+.events li{display:flex;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:.9rem}
+.events li:last-child{border:0}
+.events .k{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:none;background:var(--muted)}
+.events .k.k1{background:var(--red)} .events .k.k2{background:var(--leaf)} .events .k.k3{background:var(--cyan)}
+.events .k.k4{background:var(--magenta)} .events .k.k5{background:var(--blue)}
+.events time{margin-left:auto;color:var(--muted);font-size:.8rem;white-space:nowrap;padding-left:8px}
+.empty{color:var(--muted);font-size:.9rem;padding:10px 0}
+
+/* ---------- Formularios ---------- */
+.form-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;margin-bottom:14px}
+.form-card h2{margin:0 0 4px;font-size:1.1rem}
+.form-card > p{margin:0 0 14px;color:var(--muted);font-size:.92rem}
+table.ranges{width:100%;border-collapse:collapse}
+table.ranges th{font-size:.8rem;color:var(--muted);text-align:left;font-weight:600;padding:6px 6px}
+table.ranges td{padding:6px;border-top:1px solid var(--line);vertical-align:middle}
+table.ranges td:first-child{font-weight:600}
+table.ranges td .phys{display:block;font-size:.75rem;color:var(--muted);font-weight:400}
+input[type=number],input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1.5px solid var(--line);
+  border-radius:10px;background:var(--bg);outline:none;transition:border-color .15s}
+input:focus{border-color:var(--leaf)}
+input.err{border-color:var(--red);background:var(--red-soft)}
+@media (max-width:640px){
+  table.ranges thead{display:none}
+  table.ranges tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+  table.ranges td{border:0;padding:0}
+  table.ranges td:first-child{grid-column:1/-1}
+  table.ranges td[data-l]::before{content:attr(data-l);display:block;font-size:.72rem;color:var(--muted)}
+}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:14px}
+label.f span{display:block;font-size:.82rem;color:var(--muted);margin-bottom:4px;font-weight:600}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.btn{border:0;border-radius:11px;padding:11px 18px;font-weight:700;cursor:pointer;background:var(--leaf);color:#fff;
+  display:inline-flex;align-items:center;gap:8px;transition:transform .05s,filter .15s}
+.btn:hover{filter:brightness(1.06)} .btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.red{background:var(--red)} .btn.amber{background:var(--amber)}
+.btn:disabled{opacity:.55;cursor:wait}
+.msg{margin-top:12px;padding:10px 14px;border-radius:10px;font-size:.92rem;display:none}
+.msg.ok{display:block;background:var(--leaf-soft);color:var(--forest)}
+.msg.bad{display:block;background:var(--red-soft);color:var(--red)}
+@media (prefers-color-scheme:dark){.msg.ok{color:#9fe0b9}}
+
+/* ---------- Calibración ---------- */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.step{border:1.5px dashed var(--line);border-radius:14px;padding:16px}
+.step .n{width:30px;height:30px;border-radius:50%;background:var(--leaf);color:#fff;display:grid;place-items:center;font-weight:800;margin-bottom:8px}
+.step h4{margin:0 0 4px} .step p{margin:0 0 12px;color:var(--muted);font-size:.9rem}
+.live{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:14px 16px;background:var(--bg);border-radius:12px;margin-bottom:14px}
+.live b{font-size:1.8rem;font-variant-numeric:tabular-nums}
+
+/* ---------- Wi-Fi ---------- */
+.nets{list-style:none;padding:0;margin:10px 0 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;max-height:260px;overflow-y:auto}
+.nets li{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line)}
+.nets li:last-child{border:0} .nets li:hover{background:var(--leaf-soft)}
+.nets .sig{margin-left:auto;color:var(--muted);font-size:.82rem}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:.93rem}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-weight:600;word-break:break-all}
+
+/* ---------- Ayuda ---------- */
+.help h3{margin:18px 0 8px;font-size:1rem}
+.help p,.help li{font-size:.93rem}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:8px 0}
+.legend div{display:flex;gap:10px;align-items:center;padding:8px 10px;background:var(--bg);border-radius:10px;font-size:.9rem}
+.led{width:16px;height:16px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor;background:currentColor}
+.led.blink{animation:blink 1s steps(1) infinite} @keyframes blink{50%{opacity:.15}}
+details{background:var(--bg);border-radius:10px;padding:10px 14px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600}
+kbd{background:var(--line);border-radius:5px;padding:1px 6px;font-size:.85em}
+
+/* ---------- Modal de contraseña ---------- */
+.modal{position:fixed;inset:0;background:rgba(10,20,15,.55);display:none;place-items:center;padding:16px;z-index:10;backdrop-filter:blur(2px)}
+.modal.on{display:grid}
+.modal .box{background:var(--card);border-radius:18px;padding:22px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{margin:0 0 6px} .modal p{margin:0 0 14px;color:var(--muted);font-size:.9rem}
+.check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted);margin-top:10px}
+
+.demo{background:var(--amber-soft);color:var(--amber);text-align:center;font-size:.85rem;padding:7px;font-weight:600;display:none}
+.demo.on{display:block}
+footer{text-align:center;color:var(--muted);font-size:.8rem;margin-top:26px}
+@media (max-width:560px){
+  header{padding-top:14px}
+  header .wrap{flex-wrap:wrap}
+  header .sub{display:none}
+  header .right{margin-left:0;width:100%;justify-content:flex-start}
+  .banner{flex-wrap:wrap}
+  .banner .act{margin-left:0;width:100%}
+  .banner .act .btn{width:100%;justify-content:center}
+  .val{font-size:1.9rem}
+}
+
+/* ---------- Calibración ---------- */
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.pills button{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:9px 16px;font-weight:700;cursor:pointer;color:var(--muted)}
+.pills button.on{background:var(--forest);border-color:var(--forest);color:#fff}
+.calp{display:none}.calp.on{display:block}
+.calsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.calsum div{background:var(--bg);border-radius:10px;padding:9px 12px;font-size:.85rem}
+.calsum b{display:block;font-size:.95rem}.calsum .ok{color:var(--leaf)}.calsum .no{color:var(--amber)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:6px 0 14px}
+.kpis div{background:var(--bg);border-radius:12px;padding:10px 12px}
+.kpis span{display:block;font-size:.78rem;color:var(--muted)}.kpis b{font-size:1.35rem;font-variant-numeric:tabular-nums}
+.result{background:var(--leaf-soft);border-radius:10px;padding:10px 12px;margin:8px 0;font-weight:700;font-size:.95rem}
+.row{display:flex;gap:8px;align-items:center;margin:10px 0}.row input{flex:1}
+.bar.prog{height:12px;margin:8px 0 4px}.bar.prog div{height:100%;width:0;background:var(--leaf);border-radius:6px;transition:width .6s}
+table.mini{width:100%;border-collapse:collapse;font-size:.88rem;margin:6px 0}
+table.mini th,table.mini td{padding:6px;border-bottom:1px solid var(--line);text-align:left}
+table.mini button{border:0;background:none;color:var(--red);cursor:pointer;font-weight:700}
+select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg)}
+.pirbox{display:flex;align-items:center;gap:14px;background:var(--bg);border-radius:14px;padding:14px;margin:6px 0 12px}
+.pirdot{width:46px;height:46px;border-radius:50%;background:var(--line);flex:none;transition:background .2s,box-shadow .2s}
+.pirdot.on{background:var(--magenta);box-shadow:0 0 18px var(--magenta)}
+.live .sp{margin-left:auto}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(120px);background:var(--ink);color:var(--bg);
+  padding:11px 18px;border-radius:12px;font-size:.92rem;transition:transform .25s;z-index:20;max-width:90vw}
+.toast.on{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="demo" id="demo">Modo demostración: no hay conexión con el dispositivo, los datos son simulados.</div>
+
+<header>
+  <div class="wrap">
+    <svg class="logo" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="14" fill="rgba(255,255,255,.14)"/>
+      <path d="M24 39V25" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M24 26c0-8 5-13 13-14 0 9-5 14-13 14Z" fill="#8fdcae"/>
+      <path d="M24 30c0-6-4-10-11-11 0 7 4 11 11 11Z" fill="#c7efd6"/></svg>
+    <div>
+      <h1 id="plantName">Mi planta</h1>
+      <div class="sub">Sistema de monitoreo y cuidado de plantas</div>
+    </div>
+    <div class="right">
+      <span class="chip" id="chipWifi"><span class="dot"></span><span>Wi-Fi</span></span>
+      <span class="chip" id="chipClock">--:--</span>
+    </div>
+  </div>
+  <svg class="leaves" viewBox="0 0 200 200"><path fill="#fff" d="M100 190V100C100 50 140 15 195 10c0 60-35 95-95 95M100 130C100 85 70 60 15 55c0 45 30 75 85 75"/></svg>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button data-p="panel" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>Panel</button>
+    <button data-p="rangos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Rangos</button>
+    <button data-p="calib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg>Calibrar</button>
+    <button data-p="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/></svg>Wi-Fi y ajustes</button>
+    <button data-p="ayuda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>Ayuda</button>
+  </nav>
+
+  <!-- ===================== PANEL ===================== -->
+  <section class="page on" id="p-panel">
+    <div class="banner inicio" id="banner">
+      <div class="ico" id="bannerIco"></div>
+      <div><h2 id="bannerTitle">Conectando con el dispositivo…</h2><p id="bannerText">Un momento, por favor.</p></div>
+      <div class="act"><button class="btn red" id="btnAck" style="display:none">Reconocer alerta</button></div>
+    </div>
+
+    <div class="grid" id="cards"></div>
+
+    <div class="row2">
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><path d="M12 10v5l-3 6M12 15l3 6M8 12l4-2 4 2"/></svg>Movimiento (PIR)</h3>
+        <div class="val" id="pirCount">0<small>eventos</small></div>
+        <div class="note" id="pirNote">—</div>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Últimos eventos</h3>
+        <ul class="events" id="events"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== RANGOS ===================== -->
+  <section class="page" id="p-rangos">
+    <div class="form-card">
+      <h2>Rangos de operación de tu planta</h2>
+      <p>Define entre qué valores está bien tu planta. Si una variable sale de su rango durante varias lecturas seguidas, suena la alerta.
+         La <b>histéresis</b> es el margen que debe recuperar para volver a “normal” y evita que la alarma se prenda y apague sin parar.</p>
+      <table class="ranges">
+        <thead><tr><th>Variable</th><th>Mínimo</th><th>Máximo</th><th>Histéresis</th></tr></thead>
+        <tbody id="rangeRows"></tbody>
+      </table>
+      <div class="fields">
+        <label class="f"><span>Nombre de la planta</span><input type="text" id="fName" maxlength="32"></label>
+        <label class="f"><span>Lecturas seguidas para alertar (1–20)</span><input type="number" id="fPers" min="1" max="20" step="1"></label>
+        <label class="f"><span>Período de muestreo (2–60 s)</span><input type="number" id="fPeriod" min="2" max="60" step="1"></label>
+      </div>
+      <div class="msg" id="msgRanges"></div>
+      <div class="btns">
+        <button class="btn" id="btnSave">Guardar rangos</button>
+        <button class="btn ghost" id="btnReload">Descartar cambios</button>
+        <button class="btn ghost" id="btnDefaults">Restablecer valores de ejemplo</button>
+      </div>
+    </div>
+    <div class="form-card">
+      <h2>Ideas de rangos (solo como punto de partida)</h2>
+      <p>Cada especie es distinta: confirma con una guía de cultivo para tu planta.</p>
+      <div class="btns" id="presets"></div>
+    </div>
+  </section>
+
+  <!-- ===================== CALIBRACIÓN ===================== -->
+  <section class="page" id="p-calib">
+    <div class="form-card">
+      <h2>Calibración de sensores</h2>
+      <p>Elige un sensor y sigue los pasos. Cada corrección se guarda en el ESP32 y se aplica sola a todas las mediciones.
+         Los valores <b>sin corregir</b> son el promedio de las últimas 6 lecturas (30 s).</p>
+      <div class="calsum" id="calSum"></div>
+    </div>
+    <div class="pills" id="calPills">
+      <button data-c="soil" class="on">💧 Suelo</button><button data-c="t">🌡️ Temperatura</button>
+      <button data-c="hr">💨 Humedad</button><button data-c="lux">☀️ Luz</button><button data-c="pir">🚶 Movimiento</button>
+    </div>
+
+    <!-- SUELO -->
+    <div class="form-card calp on" id="c-soil">
+      <h2>Sensor de humedad del suelo</h2>
+      <p>El sensor entrega una tensión que <b>baja cuando hay más agua</b>. Se guardan dos puntos (seco y húmedo) y el sistema calcula el % entre ellos.</p>
+      <div class="live"><span>Lectura actual:</span><b id="calMv">—</b><span>mV</span><span class="sp" id="calPct"></span></div>
+      <div class="note warn" id="calSat" style="display:none;margin:-6px 0 12px">La tensión está cerca del tope del ADC (≈ 2,45 V): el punto seco quedaría recortado. Hace falta el divisor de la PCB.</div>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h4>Punto seco</h4>
+          <p>Tierra de tu maceta secada al aire 2–3 días (o el sensor limpio en el aire, para una prueba rápida). Entierra el sensor hasta la línea y espera 1 min.</p>
+          <button class="btn amber" data-cal="dry">Guardar como SECO</button>
+          <div class="note">Guardado: <b id="calDry">—</b> mV</div></div>
+        <div class="step"><div class="n">2</div><h4>Punto húmedo</h4>
+          <p>Riega hasta que escurra el agua y espera 15 min (o un vaso de agua). Entierra el sensor <b>solo hasta la línea</b> y espera 1 min.</p>
+          <button class="btn" data-cal="wet">Guardar como HÚMEDO</button>
+          <div class="note">Guardado: <b id="calWet">—</b> mV</div></div>
+        <div class="step"><div class="n">3</div><h4>Comprueba</h4>
+          <p>La diferencia seco − húmedo debe ser de al menos 200 mV. En la maceta el % debe quedar entre 0 y 100 y subir al regar.</p>
+          <div class="note">Diferencia: <b id="calDiff">—</b></div></div>
+      </div>
+      <div class="msg" id="msgCal"></div>
+      <div class="btns"><button class="btn ghost" data-reset="soil">Volver a valores por defecto</button></div>
+    </div>
+
+    <!-- TEMPERATURA -->
+    <div class="form-card calp" id="c-t">
+      <h2>Temperatura (sin termómetro)</h2>
+      <p><b>Método de arranque en frío.</b> Si la placa estuvo apagada un buen rato, al encender está exactamente a la temperatura del cuarto: su primera lectura es la referencia.
+         Después la placa se calienta y el sensor marca de más. Esa diferencia es la corrección.</p>
+      <div class="kpis">
+        <div><span>Al encender</span><b id="tBoot">—</b></div>
+        <div><span>Ahora sin corregir</span><b id="tRaw">—</b></div>
+        <div><span>Ahora corregida</span><b id="tCor">—</b></div>
+        <div><span>Corrección guardada</span><b id="tOff">—</b></div>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h4>Apaga 45 minutos</h4>
+          <p>Desconecta el USB y deja la placa <b>donde va a quedar</b>, en un cuarto sin sol directo, ventilador ni aire acondicionado. No la toques.</p></div>
+        <div class="step"><div class="n">2</div><h4>Enciende y espera 20 min</h4>
+          <p>Al conectarla se guarda sola la temperatura al encender. Deja esta página abierta mientras se calienta.</p>
+          <div class="bar prog"><div id="tProg"></div></div><div class="note" id="tWait">—</div></div>
+        <div class="step"><div class="n">3</div><h4>Guarda la corrección</h4>
+          <p>Corrección = al encender − ahora sin corregir.</p>
+          <div class="result" id="tCalc">—</div>
+          <button class="btn" id="tSave" disabled>Guardar corrección</button></div>
+      </div>
+      <details><summary>¿Tienes otra referencia? (termómetro prestado, aire acondicionado, estación del laboratorio)</summary>
+        <p class="note">Ponla junto al sensor 10 min y escribe lo que marca.</p>
+        <div class="row"><input type="number" step="0.1" id="tRef" placeholder="°C de la referencia"><button class="btn ghost" id="tRefSave">Calcular y guardar</button></div>
+      </details>
+      <div class="msg" id="msgT"></div>
+      <div class="btns"><button class="btn ghost" data-reset="t">Quitar corrección</button></div>
+    </div>
+
+    <!-- HUMEDAD -->
+    <div class="form-card calp" id="c-hr">
+      <h2>Humedad relativa (prueba de la sal)</h2>
+      <p>Una pasta de sal con unas gotas de agua, dentro de un frasco cerrado, mantiene una humedad conocida. Con <b>sal de mesa</b> es ≈ 75 %.</p>
+      <div class="kpis">
+        <div><span>Ahora sin corregir</span><b id="hRaw">—</b></div>
+        <div><span>Ahora corregida</span><b id="hCor">—</b></div>
+        <div><span>Fórmula guardada</span><b id="hForm">—</b></div>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h4>Prepara el frasco</h4>
+          <p>En una tapita mezcla sal con gotas de agua hasta formar una pasta húmeda (debe quedar sal sin disolver). Métela en un frasco hermético.</p></div>
+        <div class="step"><div class="n">2</div><h4>Mete el AHT10</h4>
+          <p>Con cables largos mete solo el módulo AHT10 al frasco (sin tocar la pasta) y ciérralo. Espera <b>6 a 12 horas</b> sin moverlo.</p></div>
+        <div class="step"><div class="n">3</div><h4>Guarda el punto</h4>
+          <label class="f"><span>Sal usada</span><select id="hSalt">
+            <option value="75">Sal de mesa (NaCl) — 75 %</option><option value="43">Carbonato de potasio — 43 %</option>
+            <option value="33">Cloruro de magnesio — 33 %</option><option value="x">Otra referencia…</option></select></label>
+          <input type="number" step="0.1" id="hOther" placeholder="% de la referencia" style="display:none;margin-top:6px">
+          <div class="btns"><button class="btn" id="hP1">Guardar punto 1</button><button class="btn ghost" id="hP2" disabled>Guardar punto 2 (opcional)</button></div>
+          <div class="note" id="hInfo">Con un punto se corrige el desplazamiento. Con dos sales distintas también la pendiente.</div></div>
+      </div>
+      <div class="msg" id="msgH"></div>
+      <div class="btns"><button class="btn ghost" data-reset="hr">Quitar corrección</button></div>
+    </div>
+
+    <!-- LUZ -->
+    <div class="form-card calp" id="c-lux">
+      <h2>Luz (BH1750)</h2>
+      <p>Pon el luxómetro (o la app del celular, que es aproximada) <b>justo al lado</b> del sensor, mirando en la misma dirección.
+         Agrega 3 puntos con distinta luz: el factor es el promedio de luxómetro ÷ sensor.</p>
+      <div class="kpis">
+        <div><span>Sensor sin corregir</span><b id="lRaw">—</b></div>
+        <div><span>Sensor corregido</span><b id="lCor">—</b></div>
+        <div><span>Factor guardado</span><b id="lK">—</b></div>
+      </div>
+      <div class="note warn" id="lStuck" style="display:none">El valor no ha cambiado en el último minuto. Tápalo con el dedo y alúmbralo con la linterna: si no cambia, revisa el sensor antes de calibrar.</div>
+      <div class="row"><input type="number" step="1" id="lRef" placeholder="Lux del luxómetro"><button class="btn" id="lAdd">Agregar punto</button></div>
+      <table class="mini" id="lTable"><thead><tr><th>#</th><th>Luxómetro</th><th>Sensor</th><th>Factor</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="result" id="lCalc">Sin puntos todavía.</div>
+      <div class="btns"><button class="btn" id="lSave" disabled>Guardar factor</button><button class="btn ghost" data-reset="lux">Quitar corrección</button></div>
+      <div class="msg" id="msgL"></div>
+    </div>
+
+    <!-- PIR -->
+    <div class="form-card calp" id="c-pir">
+      <h2>Sensor de movimiento (ajuste)</h2>
+      <p>El PIR se ajusta con sus dos perillas: <b>Sx</b> (distancia, ≈ 3 a 7 m) y <b>Tx</b> (tiempo, déjala al mínimo). Pon el puente en <b>H</b>.
+         Camina 10 veces a 1, 3 y 5 m y mira el contador.</p>
+      <div class="pirbox"><div class="pirdot" id="pDot"></div><div><b id="pState">—</b><div class="note" id="pWarm"></div></div></div>
+      <div class="kpis"><div><span>Detecciones en esta prueba</span><b id="pCount">0</b></div><div><span>Total desde que encendió</span><b id="pTotal">0</b></div></div>
+      <div class="btns"><button class="btn ghost" id="pReset">Empezar prueba (contador a 0)</button></div>
+      <div class="note">Meta: ≥ 9 de 10 detecciones a cada distancia y ninguna detección sin nadie cerca durante 10 min.</div>
+    </div>
+  </section>
+
+  <!-- ===================== AJUSTES ===================== -->
+  <section class="page" id="p-ajustes">
+    <div class="form-card">
+      <h2>Estado de la conexión</h2>
+      <dl class="kv" id="wifiKv"></dl>
+    </div>
+    <div class="form-card">
+      <h2>Conectar a otra red Wi-Fi</h2>
+      <p>Solo redes de 2,4 GHz. La contraseña se guarda en el dispositivo y nunca se vuelve a mostrar.</p>
+      <button class="btn ghost" id="btnScan">Buscar redes cercanas</button>
+      <ul class="nets" id="nets" style="display:none"></ul>
+      <div class="fields">
+        <label class="f"><span>Nombre de la red (SSID)</span><input type="text" id="wSsid" maxlength="32" autocomplete="off"></label>
+        <label class="f"><span>Contraseña de la red</span><input type="password" id="wPass" maxlength="63" autocomplete="new-password"></label>
+      </div>
+      <div class="msg" id="msgWifi"></div>
+      <div class="btns"><button class="btn" id="btnWifi">Conectar</button></div>
+    </div>
+    <div class="form-card">
+      <h2>Contraseña de esta página</h2>
+      <p>Se pide para guardar rangos, calibrar, reconocer alertas desde la web o cambiar el Wi-Fi. La de fábrica es <kbd>planta123</kbd>: cámbiala.</p>
+      <div class="fields">
+        <label class="f"><span>Nueva contraseña (mín. 6 caracteres)</span><input type="password" id="pNew" maxlength="32" autocomplete="new-password"></label>
+        <label class="f"><span>Repite la nueva contraseña</span><input type="password" id="pNew2" maxlength="32" autocomplete="new-password"></label>
+      </div>
+      <div class="msg" id="msgPass"></div>
+      <div class="btns"><button class="btn" id="btnPass">Cambiar contraseña</button><button class="btn ghost" id="btnForget">Olvidar contraseña en este navegador</button></div>
+    </div>
+  </section>
+
+  <!-- ===================== AYUDA ===================== -->
+  <section class="page help" id="p-ayuda">
+    <div class="form-card">
+      <h2>Guía rápida</h2>
+      <h3>1. Primera conexión</h3>
+      <ol>
+        <li>Conecta la placa a un cargador USB-C de 5 V. El LED se pone <b>blanco</b> y luego <b>azul</b> si aún no tiene red configurada.</li>
+        <li>En tu celular, conéctate a la red Wi-Fi <b id="hAp">Planta-XXXX</b> con la clave <kbd>planta1234</kbd>.</li>
+        <li>Se abre esta página sola (si no, entra a <kbd>http://192.168.4.1</kbd>). Ve a <b>Wi-Fi y ajustes</b>, elige tu red y escribe su clave. La contraseña de la página es <kbd>planta123</kbd>.</li>
+        <li>Cuando conecte, en el panel verás la nueva IP. Vuelve a la Wi-Fi de tu casa y entra a esa IP o a <kbd>http://planta.local</kbd>.</li>
+      </ol>
+      <h3>2. Configura tu planta</h3>
+      <ol>
+        <li>Calibra el sensor de suelo (pestaña <b>Calibrar suelo</b>).</li>
+        <li>Ajusta los rangos en <b>Rangos</b> y guarda. Se aplican al instante y se conservan aunque se vaya la luz.</li>
+      </ol>
+      <h3>3. ¿Qué significa el color del LED?</h3>
+      <div class="legend">
+        <div><span class="led" style="color:#fff;outline:1px solid #c9c9c9"></span>Blanco: arrancando</div>
+        <div><span class="led" style="color:#3fa66b"></span>Verde: todo en rango</div>
+        <div><span class="led blink" style="color:#e04a3f"></span>Rojo parpadeante + pitido: alerta</div>
+        <div><span class="led" style="color:#e6b422"></span>Amarillo: alerta reconocida (sigue el problema)</div>
+        <div><span class="led" style="color:#19b5c4"></span>Cian: un sensor falla o está desconectado</div>
+        <div><span class="led" style="color:#b44fd0"></span>Magenta (destello): movimiento detectado</div>
+        <div><span class="led" style="color:#3a73e0"></span>Azul: modo configuración Wi-Fi</div>
+        <div><span class="led blink" style="color:#3a73e0"></span>Verde con destello azul: sin Wi-Fi (sigue midiendo)</div>
+      </div>
+      <h3>4. Botones de la placa</h3>
+      <ul>
+        <li><b>ACK</b>: silencia la alerta. El LED queda amarillo hasta que la variable vuelva a su rango.</li>
+        <li><b>BOOT</b> mantenido <b>3 s</b> (LED blanco parpadeando) y suelta: vuelve a los rangos de ejemplo.</li>
+        <li><b>BOOT</b> mantenido <b>10 s</b> (LED azul rápido) y suelta: borra la red Wi-Fi guardada.</li>
+        <li><b>RESET</b>: reinicia la placa. No se pierde ninguna configuración.</li>
+      </ul>
+      <h3>5. Problemas frecuentes</h3>
+      <details><summary>Un valor aparece como “Falla”</summary><p>El sensor no respondió 3 veces seguidas. Revisa que el módulo esté bien insertado en su conector (VCC, GND, SCL, SDA en ese orden). Las demás variables se siguen midiendo.</p></details>
+      <details><summary>La temperatura parece alta</summary><p>El AHT10 mide también el calor de la placa. Aléjalo del ESP32 y del regulador, o sácalo con un cable corto.</p></details>
+      <details><summary>“Saturación” en el sensor de suelo</summary><p>En el ESP32-C3 el ADC mide bien hasta ≈ 2,5 V. Si en seco el sensor da más que eso, el valor seco queda recortado. Se soluciona con un divisor resistivo (ver documentación del proyecto).</p></details>
+      <details><summary>No encuentro la página en mi red</summary><p>Mira la IP en la pantalla OLED o en la consola serie. Si <kbd>planta.local</kbd> no abre en Android, usa la IP directamente.</p></details>
+      <details><summary>Olvidé la contraseña de la página</summary><p>Hay que borrar la memoria del ESP32 (<kbd>idf.py erase-flash</kbd>) y volver a programarlo: vuelve a <kbd>planta123</kbd>.</p></details>
+    </div>
+  </section>
+
+  <footer>DR-PS-02 · Sistema de monitoreo de plantas · ESP32-C3 · <span id="foot">—</span></footer>
+</div>
+
+<!-- Modal contraseña -->
+<div class="modal" id="modal">
+  <div class="box">
+    <h3>Contraseña requerida</h3>
+    <p>Para hacer cambios escribe la contraseña de la página (de fábrica: <kbd>planta123</kbd>).</p>
+    <input type="password" id="mPass" autocomplete="current-password">
+    <label class="check"><input type="checkbox" id="mRemember" checked> Recordar en este navegador</label>
+    <div class="btns"><button class="btn" id="mOk">Continuar</button><button class="btn ghost" id="mCancel">Cancelar</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ================= Configuración de las variables ================= */
+const VARS = [
+  {k:"temp", name:"Temperatura",      unit:"°C", dec:1, phys:[-40,85],  step:0.5,
+   icon:'<path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/>'},
+  {k:"hum",  name:"Humedad relativa", unit:"%",  dec:0, phys:[0,100],   step:1,
+   icon:'<path d="M7 16a5 5 0 0 0 10 0c0-3-5-10-5-10S7 13 7 16Z"/><path d="M4 7s1.5-2 1.5-3S4 2 4 2"/>'},
+  {k:"lux",  name:"Iluminancia",      unit:"lx", dec:0, phys:[0,65535], step:100, log:true,
+   icon:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'},
+  {k:"soil", name:"Humedad del suelo",unit:"%",  dec:0, phys:[0,100],   step:1,
+   icon:'<path d="M3 15h18M5 19h14"/><path d="M12 15V8M12 9c0-3 2-5 5-5 0 3-2 5-5 5ZM12 11c0-2-2-4-4-4 0 2 2 4 4 4Z"/>'},
+];
+const PRESETS = {
+  "Interior de sombra (helechos, pothos)": {temp:[18,27,.5],hum:[50,80,2],lux:[500,5000,100],soil:[40,75,3]},
+  "Suculentas y cactus":                  {temp:[18,32,.5],hum:[20,50,2],lux:[5000,40000,500],soil:[10,40,3]},
+  "Aromáticas en ventana":                {temp:[16,28,.5],hum:[40,70,2],lux:[3000,25000,300],soil:[35,70,3]},
+};
+const STATE_TXT = {
+  normal:    ["Todo en orden", "Todas las variables están dentro de sus rangos."],
+  alerta:    ["¡Atención!", ""],
+  reconocida:["Alerta reconocida", "El zumbador está silenciado, pero la condición sigue presente."],
+  inicio:    ["Iniciando…", "Tomando las primeras lecturas."],
+};
+const ICONS = {
+  ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21V11M12 12c0-5 3-8 8-8 0 5-3 8-8 8ZM12 15c0-4-3-6-7-6 0 4 3 6 7 6Z"/></svg>',
+  bad:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17v.5"/></svg>',
+  mute:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9v6h4l5 4V5L8 9H4ZM17 9l4 6M21 9l-4 6"/></svg>',
+  wait:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+};
+
+/* ================= Utilidades ================= */
+const $ = s => document.querySelector(s);
+const el = (t, cls, html) => { const e = document.createElement(t); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const fmt = (v, d) => v == null ? "—" : Number(v).toLocaleString("es-CO", {minimumFractionDigits:d, maximumFractionDigits:d});
+function ago(s){ if (s == null) return "nunca"; if (s < 60) return "hace " + Math.round(s) + " s";
+  if (s < 3600) return "hace " + Math.round(s/60) + " min"; if (s < 86400) return "hace " + Math.round(s/3600) + " h";
+  return "hace " + Math.round(s/86400) + " d"; }
+function toast(t){ const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove("on"), 3000); }
+function showMsg(id, ok, text){ const e = $(id); e.className = "msg " + (ok ? "ok" : "bad"); e.textContent = text; }
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+                set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
+                del(k){ try { localStorage.removeItem(k); } catch(e){} } };
+
+/* ================= Comunicación con el ESP32 ================= */
+let DEMO = false, pass = store.get("planta_pass") || "", last = null;
+
+async function api(path, body){
+  if (DEMO) return demoApi(path, body);
+  const opt = body === undefined ? {} : { method:"POST", headers:{"Content-Type":"application/json","X-Auth":pass}, body:JSON.stringify(body) };
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), path === "/api/scan" ? 15000 : 6000);
+  try {
+    const r = await fetch(path, {...opt, signal:ctl.signal});
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { pass = ""; store.del("planta_pass"); throw Object.assign(new Error(j.error || "Contraseña incorrecta"), {auth:true}); }
+    if (!r.ok) throw new Error(j.error || ("Error " + r.status));
+    return j;
+  } finally { clearTimeout(to); }
+}
+
+/* Pide la contraseña (si hace falta) y ejecuta una acción protegida */
+function askPass(){
+  return new Promise(res => {
+    const m = $("#modal"); m.classList.add("on"); const i = $("#mPass"); i.value = ""; setTimeout(() => i.focus(), 50);
+    const done = v => { m.classList.remove("on"); $("#mOk").onclick = $("#mCancel").onclick = i.onkeydown = null; res(v); };
+    $("#mOk").onclick = () => done(i.value);
+    $("#mCancel").onclick = () => done(null);
+    i.onkeydown = e => { if (e.key === "Enter") done(i.value); if (e.key === "Escape") done(null); };
+  });
+}
+async function secure(path, body){
+  for (let tries = 0; tries < 3; tries++){
+    if (!pass && !DEMO){ const p = await askPass(); if (p == null) throw new Error("Cancelado"); pass = p;
+      if ($("#mRemember").checked) store.set("planta_pass", p); }
+    try { return await api(path, body); }
+    catch(e){ if (!e.auth) throw e; toast("Contraseña incorrecta, intenta de nuevo"); }
+  }
+  throw new Error("Contraseña incorrecta");
+}
+
+/* ================= Panel ================= */
+function buildCards(){
+  const c = $("#cards"); c.innerHTML = "";
+  for (const v of VARS){
+    const card = el("div", "card"); card.id = "c-" + v.k;
+    card.innerHTML = `<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${v.icon}</svg>${v.name}</h3>
+      <span class="tag none">—</span><div class="val">—<small>${v.unit}</small></div>
+      <div class="bar"><div class="zone"></div><div class="mark" style="display:none"></div></div>
+      <div class="scale"><span class="lo"></span><span class="rg"></span><span class="hi"></span></div>
+      <div class="note"></div>`;
+    c.appendChild(card);
+  }
+}
+function scaleFor(v, d){
+  let lo = d.min - (d.max - d.min) * .6, hi = d.max + (d.max - d.min) * .6;
+  if (v.log){ lo = Math.max(1, d.min / 4); hi = Math.min(v.phys[1], d.max * 4); }
+  lo = Math.max(v.phys[0], lo); hi = Math.min(v.phys[1], hi);
+  const t = x => v.log ? Math.log10(Math.max(1, x)) : x;
+  return x => Math.min(100, Math.max(0, (t(x) - t(lo)) / (t(hi) - t(lo)) * 100));
+}
+function renderCard(v, d, s){
+  const card = $("#c-" + v.k), tag = card.querySelector(".tag"), pos = scaleFor(v, d);
+  card.querySelector(".val").innerHTML = (d.v == null || d.fault ? "—" : fmt(d.v, v.dec)) + `<small>${v.unit}</small>`;
+  card.classList.toggle("alarm", !!d.alarm);
+  if (d.fault){ tag.className = "tag fault"; tag.textContent = "Falla"; }
+  else if (d.v == null){ tag.className = "tag none"; tag.textContent = "Sin dato"; }
+  else if (d.alarm){ tag.className = "tag bad"; tag.textContent = d.dir < 0 ? "Bajo" : "Alto"; }
+  else if (d.v < d.min || d.v > d.max){ tag.className = "tag bad"; tag.textContent = "Fuera de rango"; }
+  else { tag.className = "tag"; tag.textContent = "En rango"; }
+  const z = card.querySelector(".zone"), a = pos(d.min), b = pos(d.max);
+  z.style.left = a + "%"; z.style.width = (b - a) + "%";
+  const m = card.querySelector(".mark");
+  if (d.v != null && !d.fault){ m.style.display = ""; m.style.left = pos(d.v) + "%"; } else m.style.display = "none";
+  card.querySelector(".rg").textContent = `rango ${fmt(d.min, v.dec)} – ${fmt(d.max, v.dec)} ${v.unit}`;
+  let note = "";
+  if (v.k === "soil" && s) note = `${s.mv} mV (seco ${s.dry} · húmedo ${s.wet})` + (s.saturated ? " · ⚠ cerca del tope del ADC" : "");
+  if (v.k === "lux" && d.v != null && !d.fault) note = d.v < 200 ? "Poca luz" : d.v < 2000 ? "Luz de interior" : d.v < 20000 ? "Luz brillante indirecta" : "Sol directo";
+  if (d.fault) note = "El sensor no responde: revisa su conexión.";
+  const n = card.querySelector(".note"); n.textContent = note; n.className = "note" + (s && s.saturated && v.k === "soil" ? " warn" : "");
+}
+function renderStatus(st){
+  last = st;
+  $("#plantName").textContent = st.name || "Mi planta"; document.title = (st.name || "Planta") + " · Monitoreo";
+  // Banner
+  const b = $("#banner"), state = st.state in STATE_TXT ? st.state : "inicio";
+  b.className = "banner " + state;
+  let [title, text] = STATE_TXT[state];
+  const bad = VARS.filter(v => st.vars[v.k].alarm).map(v => `${v.name.toLowerCase()} ${st.vars[v.k].dir < 0 ? "baja" : "alta"}`);
+  const faults = VARS.filter(v => st.vars[v.k].fault).map(v => v.name.toLowerCase());
+  if (state === "alerta"){ title = "¡Atención! " + cap(bad.join(", ")); text = "Revisa tu planta y pulsa ACK en la placa o “Reconocer alerta” aquí."; }
+  if (state === "reconocida") title = "Alerta reconocida: " + bad.join(", ");
+  if (state === "normal" && faults.length){ title = "Falla de sensor"; text = "Sin lectura de: " + faults.join(", ") + ". Las demás variables se siguen vigilando."; }
+  $("#bannerTitle").textContent = title; $("#bannerText").textContent = text;
+  $("#bannerIco").innerHTML = state === "alerta" ? ICONS.bad : state === "reconocida" ? ICONS.mute : state === "normal" && !faults.length ? ICONS.ok : state === "inicio" ? ICONS.wait : ICONS.bad;
+  $("#btnAck").style.display = state === "alerta" ? "" : "none";
+  // Tarjetas
+  for (const v of VARS) renderCard(v, st.vars[v.k], v.k === "soil" ? st.soil : null);
+  // PIR
+  $("#pirCount").innerHTML = fmt(st.pir.count, 0) + "<small>eventos</small>";
+  $("#pirNote").textContent = st.pir.warming ? "El sensor se está calentando (primer minuto); aún no cuenta movimientos."
+                             : "Último movimiento: " + ago(st.pir.ago) + ". Es informativo: no genera alertas.";
+  // Eventos
+  const ul = $("#events"); ul.innerHTML = "";
+  if (!st.events.length) ul.appendChild(el("li", "empty", "Sin eventos todavía."));
+  for (const e of st.events){
+    const li = el("li"); li.appendChild(el("span", "k k" + e.k));
+    const sp = el("span"); sp.textContent = e.msg; li.appendChild(sp);
+    const t = el("time"); t.textContent = e.t ? new Date(e.t * 1000).toLocaleString("es-CO", {hour:"2-digit", minute:"2-digit", day:"2-digit", month:"short"}) : ago(e.ago);
+    t.title = ago(e.ago); li.appendChild(t); ul.appendChild(li);
+  }
+  // Wi-Fi
+  const w = st.wifi, chip = $("#chipWifi");
+  chip.lastChild.textContent = w.connected ? `${w.ssid} · ${signal(w.rssi)}` : w.ap ? "Modo configuración" : "Sin Wi-Fi";
+  chip.querySelector(".dot").style.color = w.connected ? "#8fdcae" : w.ap ? "#9db9ff" : "#ffb4a8";
+  $("#chipClock").textContent = st.time ? new Date(st.time * 1000).toLocaleTimeString("es-CO", {hour:"2-digit", minute:"2-digit"}) : "encendido " + ago(st.uptime).replace("hace ", "");
+  $("#hAp").textContent = w.ap_ssid || "Planta-XXXX";
+  const kv = $("#wifiKv"); kv.innerHTML = "";
+  const rows = [["Estado", w.connected ? "Conectado" : w.configured ? "Intentando conectar…" : "Sin red configurada"],
+    ["Red", w.ssid || "—"], ["IP", w.ip ? w.ip : "—"], ["Señal", w.connected ? `${w.rssi} dBm (${signal(w.rssi)})` : "—"],
+    ["Dirección local", "http://planta.local"], ["Punto de acceso", w.ap ? `${w.ap_ssid} (activo) → http://192.168.4.1` : "apagado"],
+    ["Pantalla OLED", st.oled ? "detectada" : "no detectada"], ["Encendido", ago(st.uptime).replace("hace ", "")]];
+  for (const [k, v] of rows){ kv.appendChild(el("dt", null)).textContent = k; kv.appendChild(el("dd", null)).textContent = v; }
+  // Calibración
+  renderCal(st);
+  $("#foot").textContent = DEMO ? "demostración" : `muestreo cada ${st.period} s · ${st.cycles} ciclos`;
+}
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+const signal = r => r >= -55 ? "excelente" : r >= -67 ? "buena" : r >= -78 ? "regular" : "débil";
+
+let failures = 0;
+async function poll(){
+  try { renderStatus(await api("/api/status")); failures = 0; }
+  catch(e){
+    if (++failures === 1 && !last && !DEMO) return setTimeout(poll, 800);
+    if (failures >= 2 && !DEMO && !last){ DEMO = true; $("#demo").classList.add("on"); await loadConfig(); renderStatus(await api("/api/status")); }
+    else if (!DEMO && failures >= 2){ $("#bannerTitle").textContent = "Sin comunicación con el dispositivo"; $("#bannerText").textContent = "Reintentando… revisa que sigas en la misma red."; $("#banner").className = "banner inicio"; }
+  }
+}
+
+/* ================= Rangos ================= */
+let cfg = null;
+function buildRangeRows(){
+  const tb = $("#rangeRows"); tb.innerHTML = "";
+  for (const v of VARS){
+    const tr = el("tr");
+    tr.innerHTML = `<td>${v.name} (${v.unit})<span class="phys">sensor: ${fmt(v.phys[0],0)} a ${fmt(v.phys[1],0)}</span></td>
+      <td data-l="Mínimo"><input type="number" step="${v.step}" id="r-${v.k}-min"></td>
+      <td data-l="Máximo"><input type="number" step="${v.step}" id="r-${v.k}-max"></td>
+      <td data-l="Histéresis"><input type="number" step="${v.step}" min="0" id="r-${v.k}-hyst"></td>`;
+    tb.appendChild(tr);
+  }
+}
+function fillForm(c){
+  for (const v of VARS) for (const f of ["min","max","hyst"]) $(`#r-${v.k}-${f}`).value = c.ranges[v.k][f];
+  $("#fName").value = c.name; $("#fPers").value = c.persistence; $("#fPeriod").value = c.period;
+}
+async function loadConfig(){ try { cfg = await api("/api/config"); fillForm(cfg); } catch(e){} }
+function readForm(){
+  const out = {name:$("#fName").value.trim(), persistence:+$("#fPers").value, period:+$("#fPeriod").value, ranges:{}};
+  document.querySelectorAll("#p-rangos input").forEach(i => i.classList.remove("err"));
+  const errs = [];
+  for (const v of VARS){
+    const g = f => { const i = $(`#r-${v.k}-${f}`); return {i, n: i.value === "" ? NaN : +i.value}; };
+    const mn = g("min"), mx = g("max"), hy = g("hyst");
+    const bad = (o, m) => { o.i.classList.add("err"); errs.push(`${v.name}: ${m}`); };
+    if (isNaN(mn.n)) bad(mn, "falta el mínimo"); if (isNaN(mx.n)) bad(mx, "falta el máximo"); if (isNaN(hy.n)) bad(hy, "falta la histéresis");
+    if (mn.n < v.phys[0]) bad(mn, `el mínimo no puede ser menor que ${v.phys[0]}`);
+    if (mx.n > v.phys[1]) bad(mx, `el máximo no puede ser mayor que ${v.phys[1]}`);
+    if (!(mn.n < mx.n)) bad(mx, "el mínimo debe ser menor que el máximo");
+    if (hy.n < 0 || mx.n - mn.n <= 2 * hy.n) bad(hy, "la histéresis debe ser menor que la mitad del rango");
+    out.ranges[v.k] = {min:mn.n, max:mx.n, hyst:hy.n};
+  }
+  if (!(out.persistence >= 1 && out.persistence <= 20)){ $("#fPers").classList.add("err"); errs.push("Lecturas seguidas: entre 1 y 20"); }
+  if (!(out.period >= 2 && out.period <= 60)){ $("#fPeriod").classList.add("err"); errs.push("Período: entre 2 y 60 s"); }
+  if (!out.name){ $("#fName").classList.add("err"); errs.push("Escribe un nombre para la planta"); }
+  return {out, errs};
+}
+async function saveRanges(){
+  const {out, errs} = readForm();
+  if (errs.length) return showMsg("#msgRanges", false, errs[0] + (errs.length > 1 ? ` (y ${errs.length - 1} más)` : ""));
+  const btn = $("#btnSave"); btn.disabled = true;
+  try { const r = await secure("/api/config", out); showMsg("#msgRanges", true, r.msg + " ✓ Se aplican desde ya."); await loadConfig(); poll(); }
+  catch(e){ showMsg("#msgRanges", false, e.message); }
+  finally { btn.disabled = false; }
+}
+
+/* ================= Wi-Fi ================= */
+async function scan(){
+  const b = $("#btnScan"), ul = $("#nets"); b.disabled = true; b.textContent = "Buscando… (unos segundos)";
+  try {
+    const list = (await api("/api/scan")).sort((a, c) => c.rssi - a.rssi);
+    ul.innerHTML = ""; ul.style.display = "";
+    if (!list.length) ul.appendChild(el("li", null, "No se encontraron redes."));
+    for (const n of list){
+      const li = el("li"); const s = el("span"); s.textContent = (n.secure ? "🔒 " : "") + n.ssid; li.appendChild(s);
+      li.appendChild(el("span", "sig", `${signal(n.rssi)} · ${n.rssi} dBm`));
+      li.onclick = () => { $("#wSsid").value = n.ssid; $("#wPass").focus(); };
+      ul.appendChild(li);
+    }
+  } catch(e){ toast("No se pudo buscar redes: " + e.message); }
+  finally { b.disabled = false; b.textContent = "Buscar redes cercanas"; }
+}
+async function connectWifi(){
+  const ssid = $("#wSsid").value.trim(), p = $("#wPass").value;
+  if (!ssid) return showMsg("#msgWifi", false, "Escribe o elige el nombre de la red.");
+  if (p && (p.length < 8 || p.length > 63)) return showMsg("#msgWifi", false, "La clave Wi-Fi debe tener entre 8 y 63 caracteres.");
+  try { const r = await secure("/api/wifi", {ssid, pass:p}); showMsg("#msgWifi", true, r.msg); $("#wPass").value = ""; }
+  catch(e){ showMsg("#msgWifi", false, e.message); }
+}
+async function changePass(){
+  const a = $("#pNew").value, b = $("#pNew2").value;
+  if (a.length < 6) return showMsg("#msgPass", false, "Mínimo 6 caracteres.");
+  if (a !== b) return showMsg("#msgPass", false, "Las contraseñas no coinciden.");
+  try { const r = await secure("/api/password", {new:a}); pass = a; if (store.get("planta_pass")) store.set("planta_pass", a);
+        showMsg("#msgPass", true, r.msg); $("#pNew").value = $("#pNew2").value = ""; }
+  catch(e){ showMsg("#msgPass", false, e.message); }
+}
+
+
+/* ================= Calibración ================= */
+const T_WARM_S = 1200;              // 20 min de calentamiento para el método en frío
+let luxPts = [], pirBase = null, luxHist = [];
+const f1 = (v, d = 1) => v == null ? "—" : fmt(v, d);
+const sign = (v, d = 1) => v == null ? "—" : (v > 0 ? "+" : "") + fmt(v, d);
+function mmss(sec){ sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
+
+function renderCal(st){
+  const raw = st.raw || {}, cal = st.cal || {t_offset:0, hr_gain:1, hr_offset:0, lux_k:1, hr_p1_ref:0, hr_p1_raw:0};
+  // ---- resumen
+  const sum = [
+    ["Suelo", `seco ${st.soil.dry} · húmedo ${st.soil.wet} mV`, !(st.soil.dry === 2300 && st.soil.wet === 1100)],
+    ["Temperatura", cal.t_offset ? `${sign(cal.t_offset)} °C` : "sin corrección", !!cal.t_offset],
+    ["Humedad", (cal.hr_gain !== 1 || cal.hr_offset) ? `${fmt(cal.hr_gain, 3)} · HR ${sign(cal.hr_offset)}` : "sin corrección", cal.hr_gain !== 1 || !!cal.hr_offset],
+    ["Luz", cal.lux_k !== 1 ? `× ${fmt(cal.lux_k, 3)}` : "sin corrección", cal.lux_k !== 1],
+    ["Movimiento", "ajuste manual (perillas)", null]];
+  $("#calSum").innerHTML = sum.map(([n, v, ok]) => `<div><span class="${ok == null ? "" : ok ? "ok" : "no"}">${ok == null ? "•" : ok ? "✔" : "○"} ${n}</span><b>${v}</b></div>`).join("");
+  // ---- suelo
+  $("#calMv").textContent = st.soil.mv; $("#calDry").textContent = st.soil.dry; $("#calWet").textContent = st.soil.wet;
+  $("#calPct").textContent = st.vars.soil.v != null ? `≈ ${fmt(st.vars.soil.v, 0)} % con la calibración actual` : "";
+  $("#calSat").style.display = st.soil.saturated ? "" : "none";
+  const diff = st.soil.dry - st.soil.wet; $("#calDiff").textContent = diff + " mV " + (diff >= 200 ? "✔" : "✖ (muy poca)");
+  // ---- temperatura
+  $("#tBoot").textContent = raw.boot_t != null ? f1(raw.boot_t) + " °C" : "—";
+  $("#tRaw").textContent = raw.t != null ? f1(raw.t) + " °C" : "—";
+  $("#tCor").textContent = st.vars.temp.v != null ? f1(st.vars.temp.v) + " °C" : "—";
+  $("#tOff").textContent = sign(cal.t_offset) + " °C";
+  const prog = Math.min(1, st.uptime / T_WARM_S);
+  $("#tProg").style.width = (prog * 100) + "%";
+  $("#tWait").textContent = prog < 1 ? `Calentando: faltan ${mmss(T_WARM_S - st.uptime)} (encendida hace ${mmss(st.uptime)})` : `Lista: encendida hace ${mmss(st.uptime)}`;
+  let tMsg = "Espera a que termine el calentamiento.", tOk = false;
+  if (raw.boot_t == null || raw.t == null) tMsg = "Sin lectura del AHT10.";
+  else if (prog >= 1){
+    const off = raw.boot_t - raw.t;
+    if (off > 0.3) tMsg = `La temperatura bajó ${fmt(off, 1)} °C: el cuarto cambió. Repite el procedimiento.`;
+    else if (off < -6) tMsg = `Diferencia de ${fmt(off, 1)} °C, demasiado grande: ¿estaba la placa apagada 45 min?`;
+    else { tMsg = `Corrección calculada: ${sign(off, 2)} °C`; tOk = true; $("#tSave").dataset.v = off.toFixed(2); }
+  }
+  $("#tCalc").textContent = tMsg; $("#tSave").disabled = !tOk;
+  // ---- humedad
+  $("#hRaw").textContent = raw.hr != null ? f1(raw.hr) + " %" : "—";
+  $("#hCor").textContent = st.vars.hum.v != null ? f1(st.vars.hum.v) + " %" : "—";
+  $("#hForm").textContent = `${fmt(cal.hr_gain, 3)} · HR ${sign(cal.hr_offset)}`;
+  $("#hP2").disabled = !(cal.hr_p1_ref > 0);
+  $("#hInfo").textContent = cal.hr_p1_ref > 0 ? `Punto 1 guardado: referencia ${fmt(cal.hr_p1_ref, 0)} %, sensor ${fmt(cal.hr_p1_raw, 1)} %. Para el punto 2 usa una sal distinta.`
+                                              : "Con un punto se corrige el desplazamiento. Con dos sales distintas también la pendiente.";
+  // ---- luz
+  $("#lRaw").textContent = raw.lux != null ? fmt(raw.lux, 0) + " lx" : "—";
+  $("#lCor").textContent = st.vars.lux.v != null ? fmt(st.vars.lux.v, 0) + " lx" : "—";
+  $("#lK").textContent = "× " + fmt(cal.lux_k, 3);
+  if (raw.lux != null){ luxHist.push(raw.lux); if (luxHist.length > 20) luxHist.shift(); }
+  $("#lStuck").style.display = luxHist.length >= 20 && Math.max(...luxHist) === Math.min(...luxHist) ? "" : "none";
+  // ---- PIR
+  $("#pDot").classList.toggle("on", !!st.pir.now);
+  $("#pState").textContent = st.pir.warming ? "Calentando…" : st.pir.now ? "¡MOVIMIENTO!" : "Sin movimiento";
+  $("#pWarm").textContent = st.pir.warming ? "El PIR necesita ~60 s después de encender." : "Muévete frente al sensor: el círculo se pone magenta.";
+  if (pirBase == null) pirBase = st.pir.count;
+  $("#pCount").textContent = st.pir.count - pirBase; $("#pTotal").textContent = st.pir.count;
+}
+
+async function saveCal(body, msgId){
+  try { const r = await secure("/api/cal/set", body); showMsg(msgId, true, r.msg + " ✓"); poll(); return true; }
+  catch(e){ showMsg(msgId, false, e.message); return false; }
+}
+function renderLuxTable(){
+  const tb = $("#lTable tbody"); tb.innerHTML = "";
+  luxPts.forEach((p, i) => { const tr = el("tr", null, `<td>${i + 1}</td><td>${fmt(p.ref, 0)}</td><td>${fmt(p.raw, 0)}</td><td>${fmt(p.k, 3)}</td><td><button data-i="${i}">✕</button></td>`);
+    tr.querySelector("button").onclick = () => { luxPts.splice(i, 1); renderLuxTable(); }; tb.appendChild(tr); });
+  if (!luxPts.length){ $("#lCalc").textContent = "Sin puntos todavía."; $("#lSave").disabled = true; return; }
+  const ks = luxPts.map(p => p.k), k = ks.reduce((a, b) => a + b, 0) / ks.length;
+  const spread = (Math.max(...ks) - Math.min(...ks)) / k * 100;
+  $("#lCalc").textContent = `Factor promedio: × ${fmt(k, 3)} (${luxPts.length} punto${luxPts.length > 1 ? "s" : ""}${luxPts.length > 1 ? `, variación ${fmt(spread, 0)} %` : ""})` +
+    (luxPts.length < 3 ? " · se recomiendan 3 puntos" : spread > 20 ? " · revisa la posición del luxómetro" : " ✔");
+  $("#lSave").disabled = false; $("#lSave").dataset.v = k.toFixed(3);
+}
+function setupCal(){
+  document.querySelectorAll("#calPills button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#calPills button").forEach(x => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".calp").forEach(p => p.classList.toggle("on", p.id === "c-" + b.dataset.c));
+  });
+  $("#tSave").onclick = () => saveCal({t_offset: +$("#tSave").dataset.v}, "#msgT");
+  $("#tRefSave").onclick = () => {
+    const ref = parseFloat($("#tRef").value), r = last && last.raw && last.raw.t;
+    if (isNaN(ref)) return showMsg("#msgT", false, "Escribe la temperatura de la referencia.");
+    if (r == null) return showMsg("#msgT", false, "Sin lectura del AHT10.");
+    const off = ref - r; if (Math.abs(off) > 10) return showMsg("#msgT", false, `Diferencia de ${fmt(off, 1)} °C: demasiado grande, revisa la referencia.`);
+    saveCal({t_offset: +off.toFixed(2)}, "#msgT");
+  };
+  $("#hSalt").onchange = () => { $("#hOther").style.display = $("#hSalt").value === "x" ? "" : "none"; };
+  const hRef = () => $("#hSalt").value === "x" ? parseFloat($("#hOther").value) : +$("#hSalt").value;
+  $("#hP1").onclick = () => {
+    const ref = hRef(), r = last && last.raw && last.raw.hr;
+    if (isNaN(ref) || ref <= 0 || ref >= 100) return showMsg("#msgH", false, "Referencia inválida.");
+    if (r == null) return showMsg("#msgH", false, "Sin lectura del AHT10.");
+    const b = ref - r; if (Math.abs(b) > 30) return showMsg("#msgH", false, `Diferencia de ${fmt(b, 1)} %: ¿esperaste 6 h con el frasco cerrado?`);
+    saveCal({hr_gain: 1, hr_offset: +b.toFixed(2), hr_p1_ref: ref, hr_p1_raw: +r.toFixed(2)}, "#msgH");
+  };
+  $("#hP2").onclick = () => {
+    const ref2 = hRef(), r2 = last && last.raw && last.raw.hr, c = last.cal;
+    if (isNaN(ref2) || r2 == null) return showMsg("#msgH", false, "Falta la referencia o la lectura.");
+    if (Math.abs(ref2 - c.hr_p1_ref) < 15 || Math.abs(r2 - c.hr_p1_raw) < 10) return showMsg("#msgH", false, "El punto 2 debe ser con otra sal (al menos 15 % de diferencia).");
+    const a = (ref2 - c.hr_p1_ref) / (r2 - c.hr_p1_raw), b = ref2 - a * r2;
+    if (a < 0.5 || a > 1.5) return showMsg("#msgH", false, `Pendiente ${fmt(a, 2)} fuera de lo normal: repite los puntos.`);
+    saveCal({hr_gain: +a.toFixed(4), hr_offset: +b.toFixed(2)}, "#msgH");
+  };
+  $("#lAdd").onclick = () => {
+    const ref = parseFloat($("#lRef").value), r = last && last.raw && last.raw.lux;
+    if (isNaN(ref) || ref <= 0) return showMsg("#msgL", false, "Escribe el valor del luxómetro.");
+    if (r == null || r < 5) return showMsg("#msgL", false, "Muy poca luz en el sensor: usa más de 50 lx.");
+    luxPts.push({ref, raw: r, k: ref / r}); $("#lRef").value = ""; $("#msgL").className = "msg"; renderLuxTable();
+  };
+  $("#lSave").onclick = () => saveCal({lux_k: +$("#lSave").dataset.v}, "#msgL");
+  $("#pReset").onclick = () => { pirBase = last ? last.pir.count : 0; $("#pCount").textContent = 0; };
+  document.querySelectorAll("[data-reset]").forEach(b => b.onclick = async () => {
+    try { const r = await secure("/api/cal/reset", {sensor: b.dataset.reset}); toast(r.msg); if (b.dataset.reset === "lux"){ luxPts = []; renderLuxTable(); } poll(); }
+    catch(e){ toast(e.message); }
+  });
+}
+
+/* ================= Modo demostración (vista previa sin dispositivo) ================= */
+const demo = { t0: Date.now(), cfg: {name:"Monstera del estudio", persistence:3, period:5, soil_dry:2310, soil_wet:1120,
+  ranges:{temp:{min:18,max:28,hyst:.5}, hum:{min:40,max:70,hyst:2}, lux:{min:1000,max:10000,hyst:100}, soil:{min:30,max:70,hyst:3}}},
+  acked:false, cal:{t_offset:0, hr_gain:1, hr_offset:0, hr_p1_ref:0, hr_p1_raw:0, lux_k:1}, ev:[{t:0,ago:40,k:2,msg:"Conectado a Casa_Wifi (IP 192.168.1.57)"},{t:0,ago:95,k:4,msg:"Movimiento detectado cerca de la planta"},{t:0,ago:300,k:0,msg:"Monitoreo iniciado"}] };
+function demoApi(path, body){
+  const up = Math.round((Date.now() - demo.t0) / 1000) + 3600, c = demo.cfg, t = Date.now() / 1000;
+  if (path === "/api/config") { if (body) { Object.assign(c, body); return {ok:true, msg:"Rangos guardados (demo)"}; } return JSON.parse(JSON.stringify(c)); }
+  if (path === "/api/ack") { demo.acked = true; return {ok:true, msg:"Alerta reconocida"}; }
+  if (path === "/api/calibrate") { return {ok:true, msg:"Punto guardado (demo)"}; }
+  if (path === "/api/cal/set") { Object.assign(demo.cal, body); return {ok:true, msg:"Calibración guardada (demo)"}; }
+  if (path === "/api/cal/reset") { const w = body.sensor, d = {t_offset:0, hr_gain:1, hr_offset:0, hr_p1_ref:0, hr_p1_raw:0, lux_k:1};
+    if (w === "all" || w === "t") demo.cal.t_offset = 0; if (w === "all" || w === "hr") Object.assign(demo.cal, {hr_gain:1, hr_offset:0, hr_p1_ref:0, hr_p1_raw:0});
+    if (w === "all" || w === "lux") demo.cal.lux_k = 1; return {ok:true, msg:"Calibración restablecida (demo)"}; }
+  if (path === "/api/scan") return [{ssid:"Casa_Wifi",rssi:-48,secure:true},{ssid:"Vecinos 2.4G",rssi:-71,secure:true},{ssid:"Cafe_Libre",rssi:-83,secure:false}];
+  if (path === "/api/wifi" || path === "/api/password" || path === "/api/reset_ranges") return {ok:true, msg:"Hecho (demo)"};
+  const soilV = 27 + 2 * Math.sin(t / 20), mv = Math.round(c.soil_dry - soilV / 100 * (c.soil_dry - c.soil_wet));
+  const soilAlarm = soilV < c.ranges.soil.min;
+  const tRaw = 24.5 + .2 * Math.sin(t / 30), hRaw = 57 + 2 * Math.sin(t / 25), lRaw = 3200 + 400 * Math.sin(t / 15);
+  const mk = (k, v) => ({v, fault:false, alarm: k === "soil" && soilAlarm, dir: k === "soil" ? -1 : 0, ...c.ranges[k]});
+  return { name:c.name, state: soilAlarm ? (demo.acked ? "reconocida" : "alerta") : "normal", uptime:up, time:t, period:c.period, cycles:Math.round(up / 5),
+    vars:{ temp:mk("temp", tRaw + demo.cal.t_offset), hum:mk("hum", demo.cal.hr_gain * hRaw + demo.cal.hr_offset), lux:mk("lux", lRaw * demo.cal.lux_k), soil:mk("soil", soilV) },
+    raw:{t:tRaw, hr:hRaw, lux:lRaw, boot_t:23.1}, cal:{...demo.cal},
+    soil:{mv, saturated:false, dry:c.soil_dry, wet:c.soil_wet}, pir:{now: Math.sin(t / 4) > .7, warming:false, count:4 + Math.floor((Date.now() - demo.t0) / 9000), ago:95 + (Date.now() - demo.t0) / 1000},
+    wifi:{connected:true, ap:false, configured:true, ssid:"Casa_Wifi", ip:"192.168.1.57", rssi:-52, ap_ssid:"Planta-3A7F"}, oled:true,
+    events: (soilAlarm ? [{t, ago:12, k:1, msg:"Humedad del suelo fuera de rango (bajo): 28.6"}] : []).concat(demo.ev) };
+}
+
+/* ================= Arranque ================= */
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section.page").forEach(s => s.classList.toggle("on", s.id === "p-" + b.dataset.p));
+  if (b.dataset.p === "rangos" && cfg) fillForm(cfg);
+});
+$("#btnAck").onclick = async () => { try { const r = await secure("/api/ack", {}); toast(r.msg); poll(); } catch(e){ toast(e.message); } };
+$("#btnSave").onclick = saveRanges;
+$("#btnReload").onclick = () => { if (cfg) fillForm(cfg); $("#msgRanges").className = "msg"; };
+$("#btnDefaults").onclick = async () => { if (!confirmBox()) return; try { const r = await secure("/api/reset_ranges", {}); toast(r.msg); await loadConfig(); poll(); } catch(e){ toast(e.message); } };
+function confirmBox(){ return window.confirm("¿Volver a los rangos de ejemplo? Se perderán los rangos actuales (la calibración se conserva)."); }
+const presetBox = $("#presets");
+for (const [name, p] of Object.entries(PRESETS)){
+  const b = el("button", "btn ghost"); b.textContent = name;
+  b.onclick = () => { for (const k in p){ $(`#r-${k}-min`).value = p[k][0]; $(`#r-${k}-max`).value = p[k][1]; $(`#r-${k}-hyst`).value = p[k][2]; }
+    showMsg("#msgRanges", true, "Valores cargados en el formulario. Revísalos y pulsa “Guardar rangos”."); window.scrollTo({top:0, behavior:"smooth"}); };
+  presetBox.appendChild(b);
+}
+document.querySelectorAll("[data-cal]").forEach(b => b.onclick = async () => {
+  b.disabled = true;
+  try { const r = await secure("/api/calibrate", {point:b.dataset.cal}); showMsg("#msgCal", true, r.msg); poll(); }
+  catch(e){ showMsg("#msgCal", false, e.message); }
+  finally { b.disabled = false; }
+});
+$("#btnScan").onclick = scan;
+$("#btnWifi").onclick = connectWifi;
+$("#btnPass").onclick = changePass;
+$("#btnForget").onclick = () => { pass = ""; store.del("planta_pass"); toast("Contraseña olvidada en este navegador"); };
+
+buildCards(); buildRangeRows(); setupCal(); loadConfig(); poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>

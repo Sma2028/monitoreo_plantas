@@ -1,0 +1,2 @@
+# Solo para la PCB con ESP32-C3: consola por el USB nativo (IO18/IO19)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

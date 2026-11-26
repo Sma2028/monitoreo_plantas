@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f5c45">
+<title>Tablero MQTT · Monitoreo de plantas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%233fa66b' d='M16 30V16C16 8 22 3 30 2c0 9-5 14-14 14M16 20C16 13 11 9 3 8c0 7 5 12 13 12'/%3E%3C/svg%3E">
+<!-- Tablero remoto del sistema de monitoreo de plantas (DR-PS-02).
+     Ábrelo con doble clic en el navegador (PC) o súbelo a cualquier hosting estático.
+     Se conecta al broker MQTT por WebSocket; no necesita servidor propio ni librerías. -->
+<style>
+:root{
+  --bg:#f3f1ea; --card:#ffffff; --ink:#1c2a23; --muted:#5f6f66; --line:#e3e0d6;
+  --forest:#1f5c45; --leaf:#3fa66b; --leaf-soft:#e3f3e8;
+  --red:#d24b43; --red-soft:#fbe7e5; --amber:#d99a1e; --amber-soft:#fbf1dc;
+  --cyan:#1596a6; --cyan-soft:#def3f5; --blue:#3567c9; --blue-soft:#e3ebfa;
+  --magenta:#a54aa8; --shadow:0 1px 2px rgba(20,40,30,.06),0 6px 20px rgba(20,40,30,.06);
+  --r:16px;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#121a16;--card:#1a241f;--ink:#e6eee9;--muted:#9db0a5;--line:#2a3831;
+  --leaf-soft:#1d3428;--red-soft:#3a2120;--amber-soft:#3a3020;--cyan-soft:#173337;--blue-soft:#1d2840;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25)}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;background:var(--bg);color:var(--ink);
+  line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px 48px}
+
+/* ---------- Cabecera ---------- */
+header{background:var(--forest);color:#fff;padding:18px 0 54px;position:relative;overflow:hidden}
+header .wrap{display:flex;align-items:center;gap:14px;padding-bottom:0}
+header svg.logo{width:42px;height:42px;flex:none}
+header h1{font-size:1.35rem;margin:0;font-weight:700;letter-spacing:-.01em}
+header .sub{opacity:.8;font-size:.9rem}
+header .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:.82rem;
+  background:rgba(255,255,255,.14);white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+header .leaves{position:absolute;right:-30px;bottom:-40px;width:260px;opacity:.09;pointer-events:none}
+
+/* ---------- Pestañas ---------- */
+nav.tabs{display:flex;gap:4px;background:var(--card);border-radius:14px;padding:5px;box-shadow:var(--shadow);
+  margin:-30px 0 18px;position:relative;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{flex:1;min-width:max-content;border:0;background:none;padding:10px 14px;border-radius:10px;cursor:pointer;
+  color:var(--muted);font-weight:600;font-size:.92rem;display:flex;gap:7px;align-items:center;justify-content:center}
+nav.tabs button svg{width:18px;height:18px}
+nav.tabs button.on{background:var(--leaf-soft);color:var(--forest)}
+@media (prefers-color-scheme:dark){nav.tabs button.on{color:#9fe0b9}}
+section.page{display:none;animation:fade .25s ease}
+section.page.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---------- Banner de estado ---------- */
+.banner{display:flex;gap:16px;align-items:center;padding:18px 20px;border-radius:var(--r);background:var(--card);
+  box-shadow:var(--shadow);margin-bottom:18px;border-left:6px solid var(--leaf)}
+.banner .ico{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;flex:none;background:var(--leaf-soft);color:var(--leaf)}
+.banner .ico svg{width:28px;height:28px}
+.banner h2{margin:0;font-size:1.15rem}
+.banner p{margin:2px 0 0;color:var(--muted);font-size:.93rem}
+.banner .act{margin-left:auto}
+.banner.alerta{border-color:var(--red)} .banner.alerta .ico{background:var(--red-soft);color:var(--red);animation:pulse 1s infinite}
+.banner.reconocida{border-color:var(--amber)} .banner.reconocida .ico{background:var(--amber-soft);color:var(--amber)}
+.banner.inicio{border-color:var(--muted)} .banner.inicio .ico{background:var(--line);color:var(--muted)}
+@keyframes pulse{50%{transform:scale(1.07)}}
+
+/* ---------- Tarjetas ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px;position:relative}
+.card h3{margin:0;font-size:.88rem;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
+.card h3 svg{width:18px;height:18px;color:var(--leaf)}
+.val{font-size:2.2rem;font-weight:750;letter-spacing:-.02em;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.val small{font-size:1rem;color:var(--muted);font-weight:600;margin-left:3px}
+.tag{position:absolute;top:14px;right:14px;font-size:.74rem;font-weight:700;padding:3px 9px;border-radius:999px;
+  background:var(--leaf-soft);color:var(--leaf)}
+.tag.bad{background:var(--red-soft);color:var(--red)} .tag.fault{background:var(--cyan-soft);color:var(--cyan)}
+.tag.none{background:var(--line);color:var(--muted)}
+.card.alarm{outline:2px solid var(--red)}
+.bar{position:relative;height:10px;border-radius:6px;background:var(--line);margin:12px 0 6px;overflow:visible}
+.bar .zone{position:absolute;top:0;bottom:0;background:var(--leaf);opacity:.35;border-radius:6px}
+.bar .mark{position:absolute;top:-4px;width:4px;height:18px;border-radius:3px;background:var(--ink);transform:translateX(-2px);transition:left .5s}
+.scale{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted);margin-top:6px}
+.note.warn{color:var(--amber)}
+
+.row2{display:grid;grid-template-columns:1fr 1.4fr;gap:14px;margin-top:14px}
+@media (max-width:760px){.row2{grid-template-columns:1fr}}
+.events{list-style:none;margin:8px 0 0;padding:0;max-height:300px;overflow:auto}
+.events li{display:flex;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:.9rem}
+.events li:last-child{border:0}
+.events .k{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:none;background:var(--muted)}
+.events .k.k1{background:var(--red)} .events .k.k2{background:var(--leaf)} .events .k.k3{background:var(--cyan)}
+.events .k.k4{background:var(--magenta)} .events .k.k5{background:var(--blue)}
+.events time{margin-left:auto;color:var(--muted);font-size:.8rem;white-space:nowrap;padding-left:8px}
+.empty{color:var(--muted);font-size:.9rem;padding:10px 0}
+
+/* ---------- Formularios ---------- */
+.form-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;margin-bottom:14px}
+.form-card h2{margin:0 0 4px;font-size:1.1rem}
+.form-card > p{margin:0 0 14px;color:var(--muted);font-size:.92rem}
+table.ranges{width:100%;border-collapse:collapse}
+table.ranges th{font-size:.8rem;color:var(--muted);text-align:left;font-weight:600;padding:6px 6px}
+table.ranges td{padding:6px;border-top:1px solid var(--line);vertical-align:middle}
+table.ranges td:first-child{font-weight:600}
+table.ranges td .phys{display:block;font-size:.75rem;color:var(--muted);font-weight:400}
+input[type=number],input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1.5px solid var(--line);
+  border-radius:10px;background:var(--bg);outline:none;transition:border-color .15s}
+input:focus{border-color:var(--leaf)}
+input.err{border-color:var(--red);background:var(--red-soft)}
+@media (max-width:640px){
+  table.ranges thead{display:none}
+  table.ranges tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+  table.ranges td{border:0;padding:0}
+  table.ranges td:first-child{grid-column:1/-1}
+  table.ranges td[data-l]::before{content:attr(data-l);display:block;font-size:.72rem;color:var(--muted)}
+}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:14px}
+label.f span{display:block;font-size:.82rem;color:var(--muted);margin-bottom:4px;font-weight:600}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.btn{border:0;border-radius:11px;padding:11px 18px;font-weight:700;cursor:pointer;background:var(--leaf);color:#fff;
+  display:inline-flex;align-items:center;gap:8px;transition:transform .05s,filter .15s}
+.btn:hover{filter:brightness(1.06)} .btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.red{background:var(--red)} .btn.amber{background:var(--amber)}
+.btn:disabled{opacity:.55;cursor:wait}
+.msg{margin-top:12px;padding:10px 14px;border-radius:10px;font-size:.92rem;display:none}
+.msg.ok{display:block;background:var(--leaf-soft);color:var(--forest)}
+.msg.bad{display:block;background:var(--red-soft);color:var(--red)}
+@media (prefers-color-scheme:dark){.msg.ok{color:#9fe0b9}}
+
+/* ---------- Calibración ---------- */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.step{border:1.5px dashed var(--line);border-radius:14px;padding:16px}
+.step .n{width:30px;height:30px;border-radius:50%;background:var(--leaf);color:#fff;display:grid;place-items:center;font-weight:800;margin-bottom:8px}
+.step h4{margin:0 0 4px} .step p{margin:0 0 12px;color:var(--muted);font-size:.9rem}
+.live{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:14px 16px;background:var(--bg);border-radius:12px;margin-bottom:14px}
+.live b{font-size:1.8rem;font-variant-numeric:tabular-nums}
+
+/* ---------- Wi-Fi ---------- */
+.nets{list-style:none;padding:0;margin:10px 0 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;max-height:260px;overflow-y:auto}
+.nets li{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line)}
+.nets li:last-child{border:0} .nets li:hover{background:var(--leaf-soft)}
+.nets .sig{margin-left:auto;color:var(--muted);font-size:.82rem}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:.93rem}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-weight:600;word-break:break-all}
+
+/* ---------- Ayuda ---------- */
+.help h3{margin:18px 0 8px;font-size:1rem}
+.help p,.help li{font-size:.93rem}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:8px 0}
+.legend div{display:flex;gap:10px;align-items:center;padding:8px 10px;background:var(--bg);border-radius:10px;font-size:.9rem}
+.led{width:16px;height:16px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor;background:currentColor}
+.led.blink{animation:blink 1s steps(1) infinite} @keyframes blink{50%{opacity:.15}}
+details{background:var(--bg);border-radius:10px;padding:10px 14px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600}
+kbd{background:var(--line);border-radius:5px;padding:1px 6px;font-size:.85em}
+
+/* ---------- Modal de contraseña ---------- */
+.modal{position:fixed;inset:0;background:rgba(10,20,15,.55);display:none;place-items:center;padding:16px;z-index:10;backdrop-filter:blur(2px)}
+.modal.on{display:grid}
+.modal .box{background:var(--card);border-radius:18px;padding:22px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{margin:0 0 6px} .modal p{margin:0 0 14px;color:var(--muted);font-size:.9rem}
+.check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted);margin-top:10px}
+
+.demo{background:var(--amber-soft);color:var(--amber);text-align:center;font-size:.85rem;padding:7px;font-weight:600;display:none}
+.demo.on{display:block}
+footer{text-align:center;color:var(--muted);font-size:.8rem;margin-top:26px}
+@media (max-width:560px){
+  header{padding-top:14px}
+  header .wrap{flex-wrap:wrap}
+  header .sub{display:none}
+  header .right{margin-left:0;width:100%;justify-content:flex-start}
+  .banner{flex-wrap:wrap}
+  .banner .act{margin-left:0;width:100%}
+  .banner .act .btn{width:100%;justify-content:center}
+  .val{font-size:1.9rem}
+}
+
+/* ---------- Calibración ---------- */
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.pills button{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:9px 16px;font-weight:700;cursor:pointer;color:var(--muted)}
+.pills button.on{background:var(--forest);border-color:var(--forest);color:#fff}
+.calp{display:none}.calp.on{display:block}
+.calsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.calsum div{background:var(--bg);border-radius:10px;padding:9px 12px;font-size:.85rem}
+.calsum b{display:block;font-size:.95rem}.calsum .ok{color:var(--leaf)}.calsum .no{color:var(--amber)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:6px 0 14px}
+.kpis div{background:var(--bg);border-radius:12px;padding:10px 12px}
+.kpis span{display:block;font-size:.78rem;color:var(--muted)}.kpis b{font-size:1.35rem;font-variant-numeric:tabular-nums}
+.result{background:var(--leaf-soft);border-radius:10px;padding:10px 12px;margin:8px 0;font-weight:700;font-size:.95rem}
+.row{display:flex;gap:8px;align-items:center;margin:10px 0}.row input{flex:1}
+.bar.prog{height:12px;margin:8px 0 4px}.bar.prog div{height:100%;width:0;background:var(--leaf);border-radius:6px;transition:width .6s}
+table.mini{width:100%;border-collapse:collapse;font-size:.88rem;margin:6px 0}
+table.mini th,table.mini td{padding:6px;border-bottom:1px solid var(--line);text-align:left}
+table.mini button{border:0;background:none;color:var(--red);cursor:pointer;font-weight:700}
+select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg)}
+.pirbox{display:flex;align-items:center;gap:14px;background:var(--bg);border-radius:14px;padding:14px;margin:6px 0 12px}
+.pirdot{width:46px;height:46px;border-radius:50%;background:var(--line);flex:none;transition:background .2s,box-shadow .2s}
+.pirdot.on{background:var(--magenta);box-shadow:0 0 18px var(--magenta)}
+.live .sp{margin-left:auto}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(120px);background:var(--ink);color:var(--bg);
+  padding:11px 18px;border-radius:12px;font-size:.92rem;transition:transform .25s;z-index:20;max-width:90vw}
+.toast.on{transform:translateX(-50%) translateY(0)}
+/* ---------- Editor de rangos fácil ---------- */
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:6px}
+.preset{border:1.5px solid var(--line);background:var(--card);border-radius:14px;padding:12px;text-align:left;cursor:pointer;
+  display:flex;flex-direction:column;gap:2px;transition:border-color .15s,transform .05s}
+.preset:hover{border-color:var(--leaf)} .preset:active{transform:translateY(1px)}
+.preset.on{border-color:var(--leaf);background:var(--leaf-soft)}
+.preset .em{font-size:1.6rem;line-height:1}
+.preset b{font-size:.92rem;margin-top:4px} .preset small{color:var(--muted);font-size:.78rem;line-height:1.3}
+.re-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.re-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px}
+.re-head{display:flex;align-items:center;gap:10px}
+.re-head .em{font-size:1.4rem}
+.re-head h3{margin:0;font-size:1rem}
+.re-now{margin-left:auto;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--bg);color:var(--muted);white-space:nowrap}
+.re-now.in{background:var(--leaf-soft);color:var(--leaf)} .re-now.out{background:var(--red-soft);color:var(--red)}
+.re-mm{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 2px}
+.re-mm label{font-size:.8rem;color:var(--muted);font-weight:600}
+.re-mm .in{display:flex;align-items:center;gap:6px;margin-top:3px}
+.re-mm input{padding:8px 10px;font-weight:700;font-size:1.05rem;text-align:center;color:var(--ink)}
+.re-mm .u{color:var(--muted);font-size:.85rem;min-width:18px}
+.re-track{position:relative;height:44px;margin:4px 6px 0}
+.re-rail{position:absolute;left:0;right:0;top:19px;height:8px;border-radius:6px;background:linear-gradient(90deg,var(--red-soft),var(--line) 12%,var(--line) 88%,var(--red-soft))}
+.re-zone{position:absolute;top:19px;height:8px;border-radius:6px;background:var(--leaf)}
+.re-dot{position:absolute;top:12px;width:4px;height:22px;border-radius:3px;background:var(--ink);transform:translateX(-2px);transition:left .4s;display:none;z-index:1}
+.re-dot::after{content:"ahora";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:.65rem;color:var(--muted);font-weight:700}
+.re-track input[type=range]{position:absolute;left:-6px;right:-6px;width:calc(100% + 12px);top:10px;margin:0;height:26px;background:none;
+  -webkit-appearance:none;appearance:none;pointer-events:none;outline:none}
+.re-track input[type=range]::-webkit-slider-runnable-track{background:none;border:0}
+.re-track input[type=range]::-moz-range-track{background:none;border:0}
+.re-track input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:24px;height:24px;border-radius:50%;
+  background:#fff;border:3px solid var(--forest);box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:grab}
+.re-track input[type=range]::-moz-range-thumb{pointer-events:auto;width:18px;height:18px;border-radius:50%;background:#fff;
+  border:3px solid var(--forest);box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:grab}
+.re-track input[type=range]:focus-visible::-webkit-slider-thumb{outline:3px solid var(--leaf)}
+.re-scale{display:flex;justify-content:space-between;font-size:.74rem;color:var(--muted);margin:0 2px}
+.re-hint{font-size:.8rem;color:var(--muted);margin-top:6px}
+.savebar{position:sticky;bottom:12px;z-index:5;display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:12px 14px;
+  border-radius:14px;background:var(--forest);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.savebar.on{display:flex}
+.savebar span{flex:1;min-width:160px;font-weight:600}
+.savebar .btn{background:#fff;color:var(--forest)} .savebar .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.4)}
+.adv{margin-top:14px}
+.adv table{width:100%;border-collapse:collapse;font-size:.9rem}
+.adv td{padding:6px 4px;border-top:1px solid var(--line)} .adv td input{max-width:120px}
+
+.seg{display:inline-flex;gap:2px;background:var(--bg);border-radius:10px;padding:3px;flex-wrap:wrap}
+.seg button{border:0;background:none;border-radius:8px;padding:5px 10px;font-size:.8rem;font-weight:700;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--card);color:var(--forest);box-shadow:var(--shadow)}
+#chart{width:100%;height:220px;display:block;margin-top:10px}
+.card h3{flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="demo" id="demo">Modo demostración: datos simulados, no hay conexión con ninguna planta.</div>
+
+<header>
+  <div class="wrap">
+    <svg class="logo" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="14" fill="rgba(255,255,255,.14)"/>
+      <path d="M24 39V25" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M24 26c0-8 5-13 13-14 0 9-5 14-13 14Z" fill="#8fdcae"/>
+      <path d="M24 30c0-6-4-10-11-11 0 7 4 11 11 11Z" fill="#c7efd6"/></svg>
+    <div>
+      <h1 id="plantName">Tablero de plantas</h1>
+      <div class="sub">Monitoreo remoto por MQTT</div>
+    </div>
+    <div class="right">
+      <span class="chip" id="chipBroker"><span class="dot"></span><span>Sin conectar</span></span>
+      <span class="chip" id="chipPlant"><span class="dot"></span><span>Planta: —</span></span>
+      <span class="chip" id="chipSeen">—</span>
+    </div>
+  </div>
+  <svg class="leaves" viewBox="0 0 200 200"><path fill="#fff" d="M100 190V100C100 50 140 15 195 10c0 60-35 95-95 95M100 130C100 85 70 60 15 55c0 45 30 75 85 75"/></svg>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button data-p="conexion" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 7H7a5 5 0 0 0 0 10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg>Conexión</button>
+    <button data-p="panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>Panel</button>
+    <button data-p="rangos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Rangos</button>
+    <button data-p="ayuda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>Ayuda</button>
+  </nav>
+
+  <!-- ===================== CONEXIÓN ===================== -->
+  <section class="page on" id="p-conexion">
+    <div class="form-card">
+      <h2>1. Conéctate al broker</h2>
+      <p>El broker es el “cartero” de internet que recibe los datos de la planta y te los entrega aquí. Usa el mismo broker que configuraste en la página del dispositivo.
+         Desde el navegador la dirección es de tipo <kbd>wss://</kbd> (MQTT sobre WebSocket seguro).</p>
+      <div class="fields">
+        <label class="f"><span>Broker (WebSocket)</span><input type="text" id="bUrl" placeholder="wss://broker.hivemq.com:8884/mqtt"></label>
+        <label class="f"><span>Usuario (opcional)</span><input type="text" id="bUser" autocomplete="off"></label>
+        <label class="f"><span>Clave del broker (opcional)</span><input type="password" id="bPass" autocomplete="off"></label>
+      </div>
+      <div class="msg" id="msgBroker"></div>
+      <div class="btns">
+        <button class="btn" id="btnConnect">Conectar</button>
+        <button class="btn ghost" id="btnDisconnect" style="display:none">Desconectar</button>
+        <button class="btn ghost" id="btnDemo">Probar sin dispositivo</button>
+      </div>
+    </div>
+    <div class="form-card">
+      <h2>2. Elige tu planta</h2>
+      <p>Aparecen las plantas que han avisado al broker. Si no ves la tuya, escribe su identificador (está en la página del dispositivo, en <b>Wi-Fi y ajustes → Conexión MQTT</b>).</p>
+      <ul class="nets" id="plants"><li class="empty">Conéctate al broker para buscar plantas…</li></ul>
+      <div class="row"><input type="text" id="pId" placeholder="planta-3a7f12"><button class="btn" id="btnPick">Abrir</button></div>
+      <div class="btns" style="margin-top:10px"><button class="btn ghost" id="btnLink" type="button">🔗 Copiar link directo a esta planta</button></div>
+    </div>
+  </section>
+
+  <!-- ===================== PANEL ===================== -->
+  <section class="page" id="p-panel">
+    <div class="banner inicio" id="banner">
+      <div class="ico" id="bannerIco"></div>
+      <div><h2 id="bannerTitle">Elige una planta</h2><p id="bannerText">Ve a la pestaña Conexión.</p></div>
+      <div class="act"><button class="btn red" id="btnAck" style="display:none">Reconocer alerta</button></div>
+    </div>
+    <div class="grid" id="cards"></div>
+
+    <div class="card" style="margin-top:14px">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></svg>Historial
+        <span class="seg" id="histVar" style="margin-left:auto"></span></h3>
+      <canvas id="chart" height="220"></canvas>
+      <div class="note" id="chartNote">Se guarda en este navegador mientras el tablero está abierto.</div>
+    </div>
+
+    <div class="row2">
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><path d="M12 10v5l-3 6M12 15l3 6M8 12l4-2 4 2"/></svg>Movimiento y conexión</h3>
+        <div class="val" id="pirCount">—<small>movimientos</small></div>
+        <div class="note" id="pirNote">—</div>
+        <dl class="kv" id="devKv" style="margin-top:12px"></dl>
+      </div>
+      <div class="card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Eventos recibidos</h3>
+        <ul class="events" id="events"><li class="empty">Aún no llegan eventos.</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== RANGOS ===================== -->
+  <section class="page" id="p-rangos">
+    <div class="form-card">
+      <h2>1. ¿Qué planta tienes?</h2>
+      <p>Toca un tipo de planta para cargar rangos de partida y luego ajústalos. Son valores orientativos: confírmalos con una guía de cultivo de tu especie.</p>
+      <div class="presets" id="presets"></div>
+    </div>
+    <div class="form-card" style="background:none;box-shadow:none;padding:0">
+      <h2 style="margin:4px 0">2. Ajusta los rangos</h2>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:.92rem">Arrastra los círculos o escribe los números. Verde = zona “todo bien”. La rayita negra es la lectura actual.</p>
+      <div class="re-grid" id="reGrid"></div>
+    </div>
+    <div class="form-card" style="margin-top:14px">
+      <h2>3. Nombre y opciones</h2>
+      <div class="fields"><label class="f"><span>Nombre de la planta</span><input type="text" id="fName" maxlength="32"></label></div>
+      <details class="adv"><summary>Opciones avanzadas</summary>
+        <div class="fields">
+          <label class="f"><span>Lecturas seguidas para alertar (1–20)</span><input type="number" id="fPers" min="1" max="20" step="1"></label>
+          <label class="f"><span>Período de muestreo (2–60 s)</span><input type="number" id="fPeriod" min="2" max="60" step="1"></label>
+        </div>
+        <p class="note">Histéresis: cuánto debe volver a entrar una variable para quitar la alerta. Se calcula sola al mover los rangos.</p>
+        <table><tbody id="advRows"></tbody></table>
+      </details>
+      <div class="msg" id="msgRanges"></div>
+      <div class="btns"><button class="btn" id="btnSave">Enviar a la planta</button></div>
+    </div>
+    <div class="savebar" id="saveBar"><span>Tienes cambios sin enviar</span>
+      <button class="btn ghost" id="btnReload">Descartar</button><button class="btn" id="btnSave2">Enviar a la planta</button></div>
+  </section>
+
+  <!-- ===================== AYUDA ===================== -->
+  <section class="page help" id="p-ayuda">
+    <div class="form-card">
+      <h2>Cómo usar el tablero</h2>
+      <h3>1. Antes de empezar</h3>
+      <ol>
+        <li>El dispositivo debe estar conectado a tu Wi-Fi (página del dispositivo → <b>Wi-Fi y ajustes</b>).</li>
+        <li>En esa misma pestaña, en <b>Conexión MQTT</b>, debe decir <b>Conectado</b>. Anota el identificador (por ejemplo <kbd>planta-3a7f12</kbd>).</li>
+      </ol>
+      <h3>2. Conectar</h3>
+      <ol>
+        <li>En <b>Conexión</b> deja el broker que viene (<kbd>wss://broker.hivemq.com:8884/mqtt</kbd>) si no lo cambiaste en el dispositivo, y pulsa <b>Conectar</b>.</li>
+        <li>Toca tu planta en la lista. El tablero recuerda la última que abriste.</li>
+      </ol>
+      <h3>3. Cambiar los rangos</h3>
+      <ol>
+        <li>Ve a <b>Rangos</b>, toca tu tipo de planta o mueve los deslizadores.</li>
+        <li>Pulsa <b>Enviar a la planta</b>. Te pide la contraseña de la página del dispositivo (de fábrica <kbd>planta123</kbd>).</li>
+        <li>Cuando la planta confirma, aparece “Rangos guardados ✓”. Si no responde en 8 s, revisa que esté en línea.</li>
+      </ol>
+      <h3>4. Colores</h3>
+      <div class="legend">
+        <div><span class="led" style="color:#3fa66b"></span>En rango</div>
+        <div><span class="led blink" style="color:#e04a3f"></span>Alerta: una variable fuera de rango</div>
+        <div><span class="led" style="color:#e6b422"></span>Alerta reconocida (el zumbador calla)</div>
+        <div><span class="led" style="color:#19b5c4"></span>Falla de sensor</div>
+      </div>
+      <h3>5. Seguridad</h3>
+      <p>El broker de HiveMQ que viene por defecto es <b>público y de prueba</b>: cualquiera que conozca el identificador puede ver los datos, y la contraseña de los comandos viaja sin cifrar entre la planta y el broker.
+         Para un uso real crea un broker privado gratuito (por ejemplo HiveMQ Cloud), usa <kbd>mqtts://…:8883</kbd> con usuario y clave en el dispositivo y <kbd>wss://…:8884/mqtt</kbd> aquí, y cambia la contraseña de la página.</p>
+      <h3>6. Tópicos (para la documentación)</h3>
+      <table class="mini">
+        <tr><th>Tópico</th><th>Qué lleva</th></tr>
+        <tr><td><kbd>plantas/&lt;id&gt;/online</kbd></td><td>online / offline (retenido, último deseo)</td></tr>
+        <tr><td><kbd>plantas/&lt;id&gt;/telemetria</kbd></td><td>lecturas, estado y Wi-Fi cada N s (JSON, retenido)</td></tr>
+        <tr><td><kbd>plantas/&lt;id&gt;/estado</kbd></td><td>estado y variables en alarma, al cambiar (retenido)</td></tr>
+        <tr><td><kbd>plantas/&lt;id&gt;/config</kbd></td><td>rangos, nombre y calibración (retenido)</td></tr>
+        <tr><td><kbd>plantas/&lt;id&gt;/alerta</kbd> · <kbd>/evento</kbd></td><td>alertas nuevas y registro de eventos</td></tr>
+        <tr><td><kbd>plantas/&lt;id&gt;/cmd/ack</kbd> · <kbd>/cmd/rangos</kbd> · <kbd>/cmd/calibrar</kbd></td><td>comandos (llevan <kbd>clave</kbd>); respuesta en <kbd>/cmd/resp</kbd></td></tr>
+      </table>
+    </div>
+  </section>
+
+  <footer>DR-PS-02 · Tablero MQTT · <span id="foot">—</span></footer>
+</div>
+
+<div class="modal" id="modal">
+  <div class="box">
+    <h3>Contraseña de la planta</h3>
+    <p>Es la misma contraseña de la página del dispositivo (de fábrica: <kbd>planta123</kbd>).</p>
+    <input type="password" id="mPass" autocomplete="current-password">
+    <label class="check"><input type="checkbox" id="mRemember" checked> Recordar en este navegador</label>
+    <div class="btns"><button class="btn" id="mOk">Continuar</button><button class="btn ghost" id="mCancel">Cancelar</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ================= Editor de rangos fácil (deslizadores + plantillas) ================= */
+const RE_VARS = [
+  {k:"temp", name:"Temperatura",       em:"🌡️", unit:"°C", dec:1, dom:[0,45],      phys:[-40,85],   step:0.5, gap:1},
+  {k:"hum",  name:"Humedad del aire",  em:"💨", unit:"%",  dec:0, dom:[0,100],     phys:[0,100],    step:1,   gap:4},
+  {k:"lux",  name:"Luz",               em:"☀️", unit:"lx", dec:0, dom:[10,65000],  phys:[0,65535],  step:10,  gap:50, log:true},
+  {k:"soil", name:"Humedad del suelo", em:"💧", unit:"%",  dec:0, dom:[0,100],     phys:[0,100],    step:1,   gap:4},
+];
+const RE_PRESETS = [
+  {em:"🌿", name:"Tropical de interior", sub:"Monstera, pothos, filodendro", r:{temp:[18,29],hum:[50,80],lux:[1000,10000],soil:[35,70]}},
+  {em:"🌵", name:"Suculentas y cactus",  sub:"Aloe, echeveria, cactus",       r:{temp:[15,32],hum:[20,50],lux:[5000,50000],soil:[10,35]}},
+  {em:"🪴", name:"Helechos",             sub:"Helecho de Boston, culantrillo", r:{temp:[16,26],hum:[60,90],lux:[500,5000],soil:[50,80]}},
+  {em:"🌸", name:"Orquídeas",            sub:"Phalaenopsis en interior",      r:{temp:[18,30],hum:[50,80],lux:[2000,15000],soil:[25,60]}},
+  {em:"🌱", name:"Aromáticas",           sub:"Albahaca, menta, cilantro",     r:{temp:[16,28],hum:[40,70],lux:[3000,30000],soil:[40,70]}},
+  {em:"🍅", name:"Huerta",               sub:"Tomate, lechuga, pimentón",     r:{temp:[15,30],hum:[50,80],lux:[10000,60000],soil:[45,80]}},
+];
+
+function makeRangeEditor(opt){
+  /* opt: {grid, presets, savebar, advanced, onSave(ranges), fmt(v,dec)} */
+  const fmtN = opt.fmt || ((v, d) => v == null ? "—" : Number(v).toLocaleString("es-CO", {minimumFractionDigits:d, maximumFractionDigits:d}));
+  let saved = null, cur = {}, now = {};
+  const ui = {};
+
+  const roundNice = (v, V) => {
+    if (!V.log) return Math.round(v / V.step) * V.step;
+    const p = Math.pow(10, Math.floor(Math.log10(Math.max(v, 1))) - 1);    // 2 cifras significativas
+    return Math.max(V.dom[0], Math.round(v / p) * p);
+  };
+  const toPos = (v, V) => {
+    const [lo, hi] = V.dom, x = Math.min(hi, Math.max(lo, v));
+    return V.log ? (Math.log10(x) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)) * 1000 : (x - lo) / (hi - lo) * 1000;
+  };
+  const fromPos = (p, V) => {
+    const [lo, hi] = V.dom, t = p / 1000;
+    return roundNice(V.log ? Math.pow(10, Math.log10(lo) + t * (Math.log10(hi) - Math.log10(lo))) : lo + t * (hi - lo), V);
+  };
+  const autoHyst = (r, V) => {                       // margen para volver a "normal"
+    const span = r.max - r.min;
+    if (r.hyst >= 0 && 2 * r.hyst < span && r.hyst > 0) return r.hyst;
+    let h = V.log ? roundNice(span * 0.05, V) : Math.max(V.step, Math.round(span * 0.05 / V.step) * V.step);
+    while (2 * h >= span && h > 0) h = V.log ? Math.floor(h / 2) : h - V.step;
+    return Math.max(0, +h.toFixed(2));
+  };
+
+  function draw(V){
+    const r = cur[V.k], u = ui[V.k];
+    const a = toPos(r.min, V), b = toPos(r.max, V);
+    u.sMin.value = a; u.sMax.value = b;
+    u.zone.style.left = a / 10 + "%"; u.zone.style.width = (b - a) / 10 + "%";
+    if (document.activeElement !== u.iMin) u.iMin.value = +r.min.toFixed(V.dec);
+    if (document.activeElement !== u.iMax) u.iMax.value = +r.max.toFixed(V.dec);
+    u.hyst.value = r.hyst;
+    const v = now[V.k];
+    if (v == null){ u.dot.style.display = "none"; u.now.className = "re-now"; u.now.textContent = "sin dato"; }
+    else {
+      u.dot.style.display = "block"; u.dot.style.left = toPos(v, V) / 10 + "%";
+      const inside = v >= r.min && v <= r.max;
+      u.now.className = "re-now " + (inside ? "in" : "out");
+      u.now.textContent = "ahora " + fmtN(v, V.dec) + " " + V.unit + (inside ? " ✓" : "");
+    }
+  }
+  function dirty(){
+    if (!saved) return false;
+    return RE_VARS.some(V => ["min","max","hyst"].some(f => Math.abs(saved[V.k][f] - cur[V.k][f]) > 1e-6));
+  }
+  function refreshBar(){
+    opt.savebar.classList.toggle("on", dirty());
+    opt.presets.querySelectorAll(".preset").forEach(b => {
+      const p = RE_PRESETS[b.dataset.i];
+      b.classList.toggle("on", RE_VARS.every(V => cur[V.k].min === p.r[V.k][0] && cur[V.k].max === p.r[V.k][1]));
+    });
+  }
+  function change(V, min, max, which){
+    const r = cur[V.k];
+    min = Math.max(V.phys[0], min); max = Math.min(V.phys[1], max);
+    if (max - min < V.gap){ if (which === "min") min = max - V.gap; else max = min + V.gap; }
+    r.min = +min.toFixed(2); r.max = +max.toFixed(2);
+    r.hyst = autoHyst(r, V);
+    draw(V); refreshBar();
+  }
+
+  // ---- Construcción ----
+  opt.grid.innerHTML = "";
+  for (const V of RE_VARS){
+    const c = document.createElement("div"); c.className = "re-card";
+    c.innerHTML = `<div class="re-head"><span class="em">${V.em}</span><h3>${V.name}</h3><span class="re-now">—</span></div>
+      <div class="re-mm"><label>Avisar si baja de<span class="in"><input type="number" step="${V.step}" class="mn"><span class="u">${V.unit}</span></span></label>
+        <label>o si sube de<span class="in"><input type="number" step="${V.step}" class="mx"><span class="u">${V.unit}</span></span></label></div>
+      <div class="re-track"><div class="re-rail"></div><div class="re-zone"></div><div class="re-dot"></div>
+        <input type="range" min="0" max="1000" step="1" class="smn" aria-label="${V.name} mínimo">
+        <input type="range" min="0" max="1000" step="1" class="smx" aria-label="${V.name} máximo"></div>
+      <div class="re-scale"><span>${fmtN(V.dom[0], 0)} ${V.unit}</span><span>${V.log ? "escala logarítmica" : ""}</span><span>${fmtN(V.dom[1], 0)} ${V.unit}</span></div>`;
+    opt.grid.appendChild(c);
+    const u = ui[V.k] = { now:c.querySelector(".re-now"), iMin:c.querySelector(".mn"), iMax:c.querySelector(".mx"),
+      sMin:c.querySelector(".smn"), sMax:c.querySelector(".smx"), zone:c.querySelector(".re-zone"), dot:c.querySelector(".re-dot") };
+    u.sMin.oninput = () => change(V, fromPos(+u.sMin.value, V), cur[V.k].max, "min");
+    u.sMax.oninput = () => change(V, cur[V.k].min, fromPos(+u.sMax.value, V), "max");
+    const typed = (inp, which) => { const n = parseFloat(String(inp.value).replace(",", ".")); if (isNaN(n)) return;
+      which === "min" ? change(V, n, cur[V.k].max, "min") : change(V, cur[V.k].min, n, "max"); };
+    u.iMin.onchange = () => typed(u.iMin, "min"); u.iMax.onchange = () => typed(u.iMax, "max");
+    u.iMin.onblur = u.iMax.onblur = () => draw(V);
+    // Histéresis (opciones avanzadas)
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${V.em} ${V.name}</td><td><input type="number" min="0" step="${V.step}"></td><td style="color:var(--muted)">${V.unit}</td>`;
+    u.hyst = tr.querySelector("input");
+    u.hyst.onchange = () => { const n = parseFloat(u.hyst.value); if (!isNaN(n) && n >= 0 && 2 * n < cur[V.k].max - cur[V.k].min) cur[V.k].hyst = n; draw(V); refreshBar(); };
+    opt.advanced.appendChild(tr);
+  }
+  RE_PRESETS.forEach((p, i) => {
+    const b = document.createElement("button"); b.className = "preset"; b.dataset.i = i; b.type = "button";
+    b.innerHTML = `<span class="em">${p.em}</span><b>${p.name}</b><small>${p.sub}</small>`;
+    b.onclick = () => { for (const V of RE_VARS){ cur[V.k].hyst = -1; change(V, p.r[V.k][0], p.r[V.k][1], "max"); } };
+    opt.presets.appendChild(b);
+  });
+
+  return {
+    set(ranges){                               // valores guardados en el equipo
+      saved = JSON.parse(JSON.stringify(ranges));
+      cur = JSON.parse(JSON.stringify(ranges));
+      RE_VARS.forEach(draw); refreshBar();
+    },
+    setIfClean(ranges){ if (!dirty()) this.set(ranges); },
+    current(values){ now = values || {}; if (saved) RE_VARS.forEach(draw); },
+    get(){ return JSON.parse(JSON.stringify(cur)); },
+    reset(){ if (saved) this.set(saved); },
+    isDirty: dirty,
+  };
+}
+
+/* ================= Cliente MQTT 3.1.1 sobre WebSocket (sin librerías) ================= */
+class MiniMQTT {
+  constructor(url, o){ this.url = url; this.o = Object.assign({keepalive:30}, o); this.buf = new Uint8Array(0); this.pid = 1; this.closed = false; }
+  static str(s){ const b = new TextEncoder().encode(s); const o = new Uint8Array(b.length + 2); o[0] = b.length >> 8; o[1] = b.length & 255; o.set(b, 2); return o; }
+  static len(n){ const o = []; do { let d = n % 128; n = Math.floor(n / 128); if (n > 0) d |= 128; o.push(d); } while (n > 0); return o; }
+  static pack(type, parts){
+    const body = parts.reduce((a, p) => a + p.length, 0), L = MiniMQTT.len(body);
+    const out = new Uint8Array(1 + L.length + body); out[0] = type; out.set(L, 1);
+    let i = 1 + L.length; for (const p of parts){ out.set(p, i); i += p.length; } return out;
+  }
+  connect(){
+    this.closed = false;
+    let ws;
+    try { ws = new WebSocket(this.url, ["mqtt"]); } catch(e){ this.o.onState && this.o.onState("error", "Dirección inválida: " + e.message); return; }
+    this.ws = ws; ws.binaryType = "arraybuffer";
+    this.o.onState && this.o.onState("connecting");
+    ws.onopen = () => {
+      const u = this.o.user, p = this.o.pass;
+      let flags = 0x02; if (u) flags |= 0x80; if (u && p) flags |= 0x40;
+      const parts = [MiniMQTT.str("MQTT"), new Uint8Array([4, flags, this.o.keepalive >> 8, this.o.keepalive & 255]), MiniMQTT.str(this.o.clientId)];
+      if (u) parts.push(MiniMQTT.str(u)); if (u && p) parts.push(MiniMQTT.str(p));
+      ws.send(MiniMQTT.pack(0x10, parts));
+    };
+    ws.onmessage = ev => { const d = new Uint8Array(ev.data), n = new Uint8Array(this.buf.length + d.length); n.set(this.buf); n.set(d, this.buf.length); this.buf = n; this.parse(); };
+    ws.onerror = () => {};
+    ws.onclose = () => {
+      clearInterval(this.ping); this.ok = false;
+      if (this.closed) return this.o.onState && this.o.onState("closed");
+      this.o.onState && this.o.onState("retry", this.lastErr || "Se perdió la conexión con el broker. Reintentando…");
+      this.retry = setTimeout(() => this.connect(), 5000);
+    };
+  }
+  parse(){
+    for (;;){
+      const b = this.buf; if (b.length < 2) return;
+      let mul = 1, len = 0, i = 1, d;
+      do { if (i >= b.length) return; d = b[i++]; len += (d & 127) * mul; mul *= 128; } while (d & 128);
+      if (b.length < i + len) return;
+      const type = b[0] >> 4, flags = b[0] & 15, pk = b.subarray(i, i + len);
+      this.buf = b.slice(i + len);
+      if (type === 2){                                   // CONNACK
+        const rc = pk[1];
+        if (rc === 0){ this.ok = true; this.lastErr = null; this.ping = setInterval(() => this.ws.readyState === 1 && this.ws.send(new Uint8Array([0xC0, 0])), this.o.keepalive * 800);
+                       this.o.onState && this.o.onState("connected"); }
+        else { this.lastErr = rc === 4 || rc === 5 ? "El broker rechazó el usuario o la clave" : "El broker rechazó la conexión (código " + rc + ")";
+               this.closed = true; this.o.onState && this.o.onState("error", this.lastErr); this.ws.close(); }
+      } else if (type === 3){                            // PUBLISH
+        const qos = (flags >> 1) & 3, tl = (pk[0] << 8) | pk[1];
+        const topic = new TextDecoder().decode(pk.subarray(2, 2 + tl));
+        let j = 2 + tl;
+        if (qos > 0){ const id = [pk[j], pk[j + 1]]; j += 2; if (qos === 1) this.ws.send(new Uint8Array([0x40, 2, id[0], id[1]])); }
+        const payload = new TextDecoder().decode(pk.subarray(j));
+        try { this.o.onMessage && this.o.onMessage(topic, payload, !!(flags & 1)); } catch(e){ console.error(e); }
+      }
+    }
+  }
+  subscribe(topic){ if (!this.ok) return; const id = this.pid++ & 0xffff || 1;
+    this.ws.send(MiniMQTT.pack(0x82, [new Uint8Array([id >> 8, id & 255]), MiniMQTT.str(topic), new Uint8Array([0])])); }
+  unsubscribe(topic){ if (!this.ok) return; const id = this.pid++ & 0xffff || 1;
+    this.ws.send(MiniMQTT.pack(0xA2, [new Uint8Array([id >> 8, id & 255]), MiniMQTT.str(topic)])); }
+  publish(topic, payload, retain){ if (!this.ok) return false;
+    this.ws.send(MiniMQTT.pack(0x30 | (retain ? 1 : 0), [MiniMQTT.str(topic), new TextEncoder().encode(payload)])); return true; }
+  end(){ this.closed = true; clearTimeout(this.retry); clearInterval(this.ping);
+    try { if (this.ws && this.ws.readyState === 1) this.ws.send(new Uint8Array([0xE0, 0])); this.ws && this.ws.close(); } catch(e){} }
+}
+
+/* ================= Utilidades ================= */
+const $ = s => document.querySelector(s);
+const el = (t, cls, html) => { const e = document.createElement(t); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const fmt = (v, d) => v == null ? "—" : Number(v).toLocaleString("es-CO", {minimumFractionDigits:d, maximumFractionDigits:d});
+function ago(s){ if (s == null) return "nunca"; if (s < 60) return "hace " + Math.max(0, Math.round(s)) + " s";
+  if (s < 3600) return "hace " + Math.round(s/60) + " min"; if (s < 86400) return "hace " + Math.round(s/3600) + " h"; return "hace " + Math.round(s/86400) + " d"; }
+function toast(t){ const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove("on"), 3500); }
+function showMsg(id, ok, text){ const e = $(id); e.className = "msg " + (ok ? "ok" : "bad"); e.textContent = text; }
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+                set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
+                del(k){ try { localStorage.removeItem(k); } catch(e){} } };
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+const signal = r => r >= -55 ? "excelente" : r >= -67 ? "buena" : r >= -78 ? "regular" : "débil";
+
+const VARS = [
+  {k:"temp", name:"Temperatura",       unit:"°C", dec:1, phys:[-40,85],  color:"#d9822b"},
+  {k:"hum",  name:"Humedad del aire",  unit:"%",  dec:0, phys:[0,100],   color:"#3567c9"},
+  {k:"lux",  name:"Luz",               unit:"lx", dec:0, phys:[0,65535], color:"#d99a1e", log:true},
+  {k:"soil", name:"Humedad del suelo", unit:"%",  dec:0, phys:[0,100],   color:"#1596a6"},
+];
+const ICONS = {
+  ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21V11M12 12c0-5 3-8 8-8 0 5-3 8-8 8ZM12 15c0-4-3-6-7-6 0 4 3 6 7 6Z"/></svg>',
+  bad:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17v.5"/></svg>',
+  mute:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9v6h4l5 4V5L8 9H4ZM17 9l4 6M21 9l-4 6"/></svg>',
+  wait:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  off:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M3 3l18 18"/></svg>',
+};
+const ICON_SVG = {
+  temp:'<path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/>',
+  hum:'<path d="M7 16a5 5 0 0 0 10 0c0-3-5-10-5-10S7 13 7 16Z"/>',
+  lux:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  soil:'<path d="M3 15h18M5 19h14"/><path d="M12 15V8M12 9c0-3 2-5 5-5 0 3-2 5-5 5ZM12 11c0-2-2-4-4-4 0 2 2 4 4 4Z"/>',
+};
+
+/* ================= Estado ================= */
+const DEFAULT_URL = "wss://broker.hivemq.com:8884/mqtt";
+let cli = null, DEMO = false, plantId = store.get("tab_plant") || "", base = "";
+let tel = null, telAt = 0, conf = null, online = null, events = [], plants = {};
+let pass = store.get("tab_pass") || "", editor = null, histVar = "temp";
+const pending = {};               // respuestas esperadas por id
+
+/* ================= Conexión al broker ================= */
+function setBrokerChip(state, text){
+  const c = $("#chipBroker");
+  c.lastChild.textContent = text;
+  c.querySelector(".dot").style.color = state === "ok" ? "#8fdcae" : state === "wait" ? "#ffd27a" : "#ffb4a8";
+}
+function connectBroker(){
+  const url = $("#bUrl").value.trim() || DEFAULT_URL;
+  if (!/^wss?:\/\//.test(url)) return showMsg("#msgBroker", false, "Desde el navegador la dirección debe empezar por wss:// (o ws://). Ej.: " + DEFAULT_URL);
+  if (location.protocol === "https:" && url.startsWith("ws://")) return showMsg("#msgBroker", false, "Esta página está en https: usa wss://.");
+  stopDemo();
+  if (cli) cli.end();
+  store.set("tab_url", url); store.set("tab_user", $("#bUser").value.trim());
+  if ($("#bPass").value) store.set("tab_bpass", $("#bPass").value); else store.del("tab_bpass");
+  plants = {}; renderPlants();
+  cli = new MiniMQTT(url, { clientId: "tablero-" + Math.random().toString(16).slice(2, 10), user: $("#bUser").value.trim(), pass: $("#bPass").value,
+    onState(s, msg){
+      if (s === "connecting"){ setBrokerChip("wait", "Conectando…"); }
+      if (s === "connected"){
+        setBrokerChip("ok", "Broker conectado"); showMsg("#msgBroker", true, "Conectado ✓ Buscando plantas…");
+        $("#btnDisconnect").style.display = "";
+        cli.subscribe("plantas/+/online");
+        if (plantId) openPlant(plantId, true);
+      }
+      if (s === "retry"){ setBrokerChip("wait", "Reconectando…"); showMsg("#msgBroker", false, msg); }
+      if (s === "error"){ setBrokerChip("bad", "Error"); showMsg("#msgBroker", false, msg); }
+      if (s === "closed"){ setBrokerChip("bad", "Sin conectar"); $("#btnDisconnect").style.display = "none"; }
+    },
+    onMessage: onMessage });
+  cli.connect();
+  setTimeout(() => { if (cli && !cli.ok && !cli.closed) showMsg("#msgBroker", false, "No responde el broker. Revisa la dirección, el puerto (8884 para wss en HiveMQ) y tu internet."); }, 9000);
+}
+
+function onMessage(topic, payload){
+  const p = topic.split("/");
+  if (p[0] !== "plantas" || p.length < 3) return;
+  const id = p[1], leaf = p.slice(2).join("/");
+  if (leaf === "online"){ plants[id] = payload; renderPlants(); }
+  if (id !== plantId) return;
+  let j = null; try { j = JSON.parse(payload); } catch(e){}
+  if (leaf === "online"){ online = payload === "online"; render(); }
+  else if (leaf === "telemetria" && j){ tel = j; telAt = Date.now(); addHist(j); render(); }
+  else if (leaf === "config" && j){ conf = j; editor.setIfClean(j.ranges); fillOpts(); render(); }
+  else if (leaf === "estado" && j){ if (tel){ tel.state = j.state; } render(); }
+  else if (leaf === "evento" && j){ events.unshift({...j, at:Date.now()}); events = events.slice(0, 40); renderEvents(); }
+  else if (leaf === "alerta" && j){ toast("⚠ " + j.msg); notify(j.msg); }
+  else if (leaf === "cmd/resp" && j && j.id && pending[j.id]){ pending[j.id](j); delete pending[j.id]; }
+}
+
+function openPlant(id, silent){
+  id = id.trim(); if (!id) return;
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) return toast("Identificador inválido");
+  if (cli && base) cli.unsubscribe(base + "/#");
+  plantId = id; base = "plantas/" + id; store.set("tab_plant", id);
+  tel = null; conf = null; online = null; events = []; loadHist();
+  $("#pId").value = id;
+  if (cli && cli.ok){ cli.subscribe(base + "/#"); cli.publish(base + "/cmd/actualizar", "{}"); }
+  renderPlants(); render(); renderEvents();
+  if (!silent) showTab("panel");
+}
+function renderPlants(){
+  const ul = $("#plants"); ul.innerHTML = "";
+  const ids = Object.keys(plants).sort((a, b) => (plants[b] === "online") - (plants[a] === "online") || a.localeCompare(b));
+  if (!ids.length){ ul.appendChild(el("li", "empty", cli && cli.ok ? "Aún no aparece ninguna planta. ¿Está conectada a internet y con MQTT activo?" : "Conéctate al broker para buscar plantas…")); return; }
+  for (const id of ids){
+    const li = el("li"); const on = plants[id] === "online";
+    li.innerHTML = `<span style="font-size:1.2rem">🪴</span><span></span><span class="sig" style="color:${on ? "var(--leaf)" : "var(--muted)"}">${on ? "● en línea" : "○ desconectada"}${id === plantId ? " · abierta" : ""}</span>`;
+    li.children[1].textContent = id;
+    li.onclick = () => openPlant(id);
+    ul.appendChild(li);
+  }
+}
+
+/* ================= Panel ================= */
+function buildCards(){
+  const c = $("#cards"); c.innerHTML = "";
+  for (const v of VARS){
+    const card = el("div", "card"); card.id = "c-" + v.k;
+    card.innerHTML = `<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICON_SVG[v.k]}</svg>${v.name}</h3>
+      <span class="tag none">—</span><div class="val">—<small>${v.unit}</small></div>
+      <div class="bar"><div class="zone"></div><div class="mark" style="display:none"></div></div>
+      <div class="scale"><span></span><span class="rg"></span><span></span></div><div class="note"></div>`;
+    c.appendChild(card);
+  }
+}
+function scaleFor(v, r){
+  let lo = r.min - (r.max - r.min) * .6, hi = r.max + (r.max - r.min) * .6;
+  if (v.log){ lo = Math.max(1, r.min / 4); hi = Math.min(v.phys[1], r.max * 4); }
+  lo = Math.max(v.phys[0], lo); hi = Math.min(v.phys[1], hi);
+  const t = x => v.log ? Math.log10(Math.max(1, x)) : x;
+  return x => Math.min(100, Math.max(0, (t(x) - t(lo)) / (t(hi) - t(lo)) * 100));
+}
+function renderCard(v){
+  const card = $("#c-" + v.k), tag = card.querySelector(".tag");
+  const d = tel && tel.vars ? tel.vars[v.k] : null, r = conf ? conf.ranges[v.k] : null;
+  card.querySelector(".val").innerHTML = (d && d.v != null && !d.fault ? fmt(d.v, v.dec) : "—") + `<small>${v.unit}</small>`;
+  card.classList.toggle("alarm", !!(d && d.alarm));
+  if (!d){ tag.className = "tag none"; tag.textContent = "Sin dato"; }
+  else if (d.fault){ tag.className = "tag fault"; tag.textContent = "Falla"; }
+  else if (d.v == null){ tag.className = "tag none"; tag.textContent = "Sin dato"; }
+  else if (d.alarm){ tag.className = "tag bad"; tag.textContent = d.dir < 0 ? "Bajo" : "Alto"; }
+  else if (r && (d.v < r.min || d.v > r.max)){ tag.className = "tag bad"; tag.textContent = "Fuera de rango"; }
+  else { tag.className = "tag"; tag.textContent = "En rango"; }
+  const z = card.querySelector(".zone"), m = card.querySelector(".mark");
+  if (r){ const pos = scaleFor(v, r), a = pos(r.min), b = pos(r.max);
+    z.style.left = a + "%"; z.style.width = (b - a) + "%";
+    card.querySelector(".rg").textContent = `rango ${fmt(r.min, v.dec)} – ${fmt(r.max, v.dec)} ${v.unit}`;
+    if (d && d.v != null && !d.fault){ m.style.display = ""; m.style.left = pos(d.v) + "%"; } else m.style.display = "none"; }
+  let note = "";
+  if (v.k === "soil" && tel && tel.soil) note = `${tel.soil.mv} mV` + (tel.soil.saturated ? " · ⚠ cerca del tope del ADC" : "");
+  if (v.k === "lux" && d && d.v != null && !d.fault) note = d.v < 200 ? "Poca luz" : d.v < 2000 ? "Luz de interior" : d.v < 20000 ? "Luz brillante indirecta" : "Sol directo";
+  if (d && d.fault) note = "El sensor no responde: revisa su conexión.";
+  card.querySelector(".note").textContent = note;
+}
+const STATE_TXT = {
+  normal:["Todo en orden", "Todas las variables están dentro de sus rangos."],
+  alerta:["¡Atención!", ""],
+  reconocida:["Alerta reconocida", "El zumbador está silenciado, pero la condición sigue presente."],
+  inicio:["Iniciando…", "La planta está tomando las primeras lecturas."],
+};
+function render(){
+  const b = $("#banner");
+  const stale = tel && telAt && (Date.now() - telAt) / 1000 > Math.max(60, 3 * (tel.period || 10));
+  let state = tel ? (tel.state in STATE_TXT ? tel.state : "inicio") : "inicio", title, text, ico;
+  if (!plantId){ title = "Elige una planta"; text = "Ve a la pestaña Conexión."; ico = ICONS.wait; state = "inicio"; }
+  else if (!tel){ title = DEMO || (cli && cli.ok) ? "Esperando datos de " + plantId + "…" : "Conéctate al broker"; text = "Los datos llegan apenas la planta publica (cada pocos segundos)."; ico = ICONS.wait; state = "inicio"; }
+  else if (online === false){ title = "La planta está desconectada"; text = "Último dato " + ago((Date.now() - telAt) / 1000) + " (puede ser un dato guardado por el broker). Revisa su Wi-Fi o alimentación."; ico = ICONS.off; state = "inicio"; }
+  else {
+    [title, text] = STATE_TXT[state];
+    const bad = VARS.filter(v => tel.vars[v.k] && tel.vars[v.k].alarm).map(v => `${v.name.toLowerCase()} ${tel.vars[v.k].dir < 0 ? "baja" : "alta"}`);
+    const faults = VARS.filter(v => tel.vars[v.k] && tel.vars[v.k].fault).map(v => v.name.toLowerCase());
+    if (state === "alerta"){ title = "¡Atención! " + cap(bad.join(", ")); text = "Revisa tu planta. Puedes silenciar el zumbador con “Reconocer alerta”."; }
+    if (state === "reconocida") title = "Alerta reconocida: " + bad.join(", ");
+    if (state === "normal" && faults.length){ title = "Falla de sensor"; text = "Sin lectura de: " + faults.join(", ") + "."; }
+    ico = state === "alerta" ? ICONS.bad : state === "reconocida" ? ICONS.mute : state === "normal" && !faults.length ? ICONS.ok : state === "inicio" ? ICONS.wait : ICONS.bad;
+    if (stale) text = "⚠ Sin datos nuevos desde " + ago((Date.now() - telAt) / 1000) + ". " + text;
+  }
+  b.className = "banner " + state;
+  $("#bannerTitle").textContent = title; $("#bannerText").textContent = text; $("#bannerIco").innerHTML = ico;
+  $("#btnAck").style.display = tel && state === "alerta" && online !== false ? "" : "none";
+  $("#plantName").textContent = (conf && conf.name) || (tel && tel.name) || (plantId || "Tablero de plantas");
+  document.title = ((conf && conf.name) || "Plantas") + " · Tablero MQTT";
+  const pc = $("#chipPlant"); pc.lastChild.textContent = plantId ? plantId + (online === true ? " · en línea" : online === false ? " · desconectada" : "") : "Planta: —";
+  pc.querySelector(".dot").style.color = online === true ? "#8fdcae" : online === false ? "#ffb4a8" : "#ffd27a";
+  $("#chipSeen").textContent = telAt ? "dato " + ago((Date.now() - telAt) / 1000) : "—";
+  for (const v of VARS) renderCard(v);
+  // PIR y dispositivo
+  if (tel && tel.pir){ $("#pirCount").innerHTML = fmt(tel.pir.count, 0) + "<small>movimientos</small>";
+    $("#pirNote").textContent = tel.pir.warming ? "El sensor se está calentando." : "Último movimiento: " + ago(tel.pir.ago) + "."; }
+  const kv = $("#devKv"); kv.innerHTML = "";
+  if (tel){ const rows = [["Wi-Fi", tel.wifi ? `${tel.wifi.ssid} · ${signal(tel.wifi.rssi)} (${tel.wifi.rssi} dBm)` : "—"], ["IP local", tel.wifi && tel.wifi.ip || "—"],
+      ["Encendida", ago(tel.up).replace("hace ", "")], ["Envía datos cada", (tel.period || "—") + " s"]];
+    if (conf && conf.cal) rows.push(["Calibración", `T ${conf.cal.t_offset >= 0 ? "+" : ""}${fmt(conf.cal.t_offset, 1)} °C · HR ${fmt(conf.cal.hr_offset, 1)} · luz ×${fmt(conf.cal.lux_k, 3)}`]);
+    for (const [k, v] of rows){ kv.appendChild(el("dt")).textContent = k; kv.appendChild(el("dd")).textContent = v; } }
+  if (editor && tel){ const now = {}; for (const v of VARS){ const d = tel.vars[v.k]; now[v.k] = d && !d.fault ? d.v : null; } editor.current(now); }
+  $("#foot").textContent = DEMO ? "demostración" : plantId ? "plantas/" + plantId : "sin planta";
+  drawChart();
+}
+function renderEvents(){
+  const ul = $("#events"); ul.innerHTML = "";
+  if (!events.length) return ul.appendChild(el("li", "empty", "Aún no llegan eventos. Aparecen aquí mientras el tablero está abierto."));
+  for (const e of events){
+    const li = el("li"); li.appendChild(el("span", "k k" + e.k));
+    const sp = el("span"); sp.textContent = e.msg; li.appendChild(sp);
+    const t = el("time"); t.textContent = new Date(e.ts ? e.ts * 1000 : e.at).toLocaleString("es-CO", {hour:"2-digit", minute:"2-digit", day:"2-digit", month:"short"});
+    li.appendChild(t); ul.appendChild(li);
+  }
+}
+function notify(msg){
+  try { if ("Notification" in window && Notification.permission === "granted" && document.hidden) new Notification("🌱 Alerta de tu planta", {body: msg}); } catch(e){}
+}
+
+/* ================= Historial ================= */
+let hist = [];
+const HKEY = () => "tab_hist_" + plantId;
+function loadHist(){ try { hist = JSON.parse(store.get(HKEY()) || "[]"); } catch(e){ hist = []; } const lim = Date.now() - 864e5; hist = hist.filter(h => h.t > lim); }
+function addHist(j){
+  const p = {t:Date.now()}; for (const v of VARS){ const d = j.vars && j.vars[v.k]; p[v.k] = d && !d.fault ? d.v : null; }
+  const last = hist[hist.length - 1];
+  if (last && p.t - last.t < 20000) return;            // un punto cada 20 s como máximo
+  hist.push(p); const lim = Date.now() - 864e5; while (hist.length && hist[0].t < lim) hist.shift();
+  if (!DEMO) store.set(HKEY(), JSON.stringify(hist));
+}
+function drawChart(){
+  const cv = $("#chart"), V = VARS.find(v => v.k === histVar), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = 220; cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const css = getComputedStyle(document.body), ink = css.getPropertyValue("--muted").trim() || "#666", line = css.getPropertyValue("--line").trim() || "#ddd";
+  g.clearRect(0, 0, W, H); g.font = "12px system-ui"; g.fillStyle = ink;
+  const pts = hist.filter(h => h[V.k] != null);
+  if (pts.length < 2){ g.fillText("Aún no hay suficientes datos. Se dibuja un punto cada 20 s mientras el tablero está abierto.", 10, H / 2); return; }
+  const r = conf ? conf.ranges[V.k] : null;
+  let lo = Math.min(...pts.map(p => p[V.k])), hi = Math.max(...pts.map(p => p[V.k]));
+  if (r){ lo = Math.min(lo, r.min); hi = Math.max(hi, r.max); }
+  const tf = x => V.log ? Math.log10(Math.max(1, x)) : x;
+  let a = tf(lo), b = tf(hi); const pad = (b - a) * .1 || 1; a -= pad; b += pad;
+  const L = 52, R = W - 12, T = 12, B = H - 26, t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const X = t => L + (t - t0) / Math.max(1, t1 - t0) * (R - L), Y = v => B - (tf(v) - a) / (b - a) * (B - T);
+  if (r){ g.fillStyle = "rgba(63,166,107,.14)"; g.fillRect(L, Y(r.max), R - L, Y(r.min) - Y(r.max)); }
+  g.strokeStyle = line; g.lineWidth = 1; g.fillStyle = ink;
+  for (let i = 0; i <= 4; i++){ const yv = a + (b - a) * i / 4, y = B - (B - T) * i / 4, val = V.log ? Math.pow(10, yv) : yv;
+    g.beginPath(); g.moveTo(L, y); g.lineTo(R, y); g.stroke(); g.fillText(fmt(val, V.log || Math.abs(b - a) > 20 ? 0 : V.dec), 4, y + 4); }
+  const tl = d => new Date(d).toLocaleTimeString("es-CO", {hour:"2-digit", minute:"2-digit"});
+  g.fillText(tl(t0), L, H - 6); const w = g.measureText(tl(t1)).width; g.fillText(tl(t1), R - w, H - 6);
+  g.strokeStyle = V.color; g.lineWidth = 2.2; g.beginPath();
+  pts.forEach((p, i) => i ? g.lineTo(X(p.t), Y(p[V.k])) : g.moveTo(X(p.t), Y(p[V.k]))); g.stroke();
+  $("#chartNote").textContent = `${V.name} · ${pts.length} puntos · desde ${tl(t0)} · La franja verde es el rango. Se guarda en este navegador (últimas 24 h).`;
+}
+function buildHistTabs(){
+  const s = $("#histVar"); s.innerHTML = "";
+  for (const v of VARS){ const b = el("button", v.k === histVar ? "on" : ""); b.textContent = v.name.replace("Humedad del ", "Hum. ");
+    b.onclick = () => { histVar = v.k; buildHistTabs(); drawChart(); }; s.appendChild(b); }
+}
+
+/* ================= Comandos ================= */
+function askPass(){
+  return new Promise(res => {
+    const m = $("#modal"); m.classList.add("on"); const i = $("#mPass"); i.value = ""; setTimeout(() => i.focus(), 50);
+    const done = v => { m.classList.remove("on"); $("#mOk").onclick = $("#mCancel").onclick = i.onkeydown = null; res(v); };
+    $("#mOk").onclick = () => done(i.value); $("#mCancel").onclick = () => done(null);
+    i.onkeydown = e => { if (e.key === "Enter") done(i.value); if (e.key === "Escape") done(null); };
+  });
+}
+function sendCmd(cmd, body){
+  return new Promise((res, rej) => {
+    if (DEMO) return setTimeout(() => res(demoCmd(cmd, body)), 400);
+    if (!cli || !cli.ok) return rej(new Error("No hay conexión con el broker"));
+    if (!plantId) return rej(new Error("Primero elige una planta"));
+    const id = Math.random().toString(36).slice(2, 10);
+    const to = setTimeout(() => { delete pending[id]; rej(new Error("La planta no respondió en 8 s. ¿Está en línea?")); }, 8000);
+    pending[id] = j => { clearTimeout(to); res(j); };
+    cli.publish(base + "/cmd/" + cmd, JSON.stringify({...body, clave:pass, id}));
+  });
+}
+async function secureCmd(cmd, body){
+  for (let tries = 0; tries < 3; tries++){
+    if (!pass && !DEMO){ const p = await askPass(); if (p == null) throw new Error("Cancelado"); pass = p; if ($("#mRemember").checked) store.set("tab_pass", p); }
+    const r = await sendCmd(cmd, body);
+    if (r.ok) return r;
+    if (/[Cc]lave incorrecta/.test(r.msg)){ pass = ""; store.del("tab_pass"); toast("Contraseña incorrecta, intenta de nuevo"); continue; }
+    throw new Error(r.msg);
+  }
+  throw new Error("Contraseña incorrecta");
+}
+
+/* ================= Rangos ================= */
+function fillOpts(){
+  if (!conf) return;
+  if (document.activeElement !== $("#fName")) $("#fName").value = conf.name;
+  $("#fPers").value = conf.persistence; $("#fPeriod").value = conf.period;
+}
+async function saveRanges(){
+  const body = {name:$("#fName").value.trim(), persistence:+$("#fPers").value, period:+$("#fPeriod").value, ranges:editor.get()};
+  if (!conf) return showMsg("#msgRanges", false, "Aún no llega la configuración de la planta. Espera a que aparezca en línea.");
+  if (!body.name) return showMsg("#msgRanges", false, "Escribe un nombre para la planta");
+  if (!(body.persistence >= 1 && body.persistence <= 20)) return showMsg("#msgRanges", false, "Lecturas seguidas: entre 1 y 20");
+  if (!(body.period >= 2 && body.period <= 60)) return showMsg("#msgRanges", false, "Período de muestreo: entre 2 y 60 s");
+  $("#btnSave").disabled = $("#btnSave2").disabled = true; showMsg("#msgRanges", true, "Enviando a la planta…");
+  try { const r = await secureCmd("rangos", body); showMsg("#msgRanges", true, r.msg + " ✓ La planta ya los está usando."); toast("Rangos guardados ✓");
+        editor.set(body.ranges); if (DEMO){ conf = {...conf, ...body}; render(); } }
+  catch(e){ showMsg("#msgRanges", false, e.message); toast(e.message); }
+  finally { $("#btnSave").disabled = $("#btnSave2").disabled = false; }
+}
+
+/* ================= Demostración ================= */
+let demoTimer = null;
+const demoState = {acked:false};
+function startDemo(){
+  if (cli){ cli.end(); cli = null; }
+  DEMO = true; $("#demo").classList.add("on"); plantId = "planta-demo"; base = "plantas/planta-demo";
+  setBrokerChip("ok", "Demostración"); plants = {"planta-demo":"online"}; renderPlants(); online = true;
+  conf = {name:"Monstera del estudio", persistence:3, period:5, ranges:{temp:{min:18,max:29,hyst:.5}, hum:{min:50,max:80,hyst:2}, lux:{min:1000,max:10000,hyst:100}, soil:{min:35,max:70,hyst:2}},
+          cal:{t_offset:-.6, hr_gain:1, hr_offset:-15.1, lux_k:.969}};
+  editor.set(conf.ranges); fillOpts();
+  hist = []; const now = Date.now();
+  for (let i = 180; i > 0; i--){ const t = now - i * 20000, s = t / 1000;
+    hist.push({t, temp:24 + 1.5 * Math.sin(s / 900), hum:58 + 6 * Math.sin(s / 700), lux:Math.max(80, 3000 + 2500 * Math.sin(s / 1200)), soil:40 - i * .04}); }
+  events = [{k:5, msg:"MQTT conectado", at:now - 60000, ts:0}, {k:4, msg:"Movimiento detectado cerca de la planta", at:now - 300000, ts:0}, {k:0, msg:"Monitoreo iniciado", at:now - 900000, ts:0}];
+  const tick = () => { const s = Date.now() / 1000, soil = 33 + 2 * Math.sin(s / 20), alarm = soil < conf.ranges.soil.min;
+    tel = {name:conf.name, state: alarm ? (demoState.acked ? "reconocida" : "alerta") : "normal", up: 7200 + Math.round(s % 1000), period:10,
+      vars:{temp:{v:24.6 + .2 * Math.sin(s / 30), alarm:false, dir:0, fault:false}, hum:{v:57 + 2 * Math.sin(s / 25), alarm:false, dir:0, fault:false},
+            lux:{v:2900 + 300 * Math.sin(s / 15), alarm:false, dir:0, fault:false}, soil:{v:soil, alarm, dir:alarm ? -1 : 0, fault:false}},
+      soil:{mv:Math.round(2266 - soil / 100 * (2266 - 885)), saturated:false}, pir:{count:4, ago:300 + s % 100, warming:false},
+      wifi:{ssid:"Casa_Wifi", ip:"192.168.1.57", rssi:-58}};
+    telAt = Date.now(); addHist(tel); render(); };
+  tick(); clearInterval(demoTimer); demoTimer = setInterval(tick, 3000); renderEvents(); showTab("panel");
+}
+function stopDemo(){ if (!DEMO) return; DEMO = false; clearInterval(demoTimer); $("#demo").classList.remove("on"); tel = null; conf = null; plantId = store.get("tab_plant") || ""; render(); }
+function demoCmd(cmd, body){
+  if (cmd === "ack"){ demoState.acked = true; return {ok:true, msg:"Alerta reconocida"}; }
+  if (cmd === "rangos"){ conf = {...conf, name:body.name, persistence:body.persistence, period:body.period, ranges:body.ranges}; return {ok:true, msg:"Rangos guardados"}; }
+  return {ok:false, msg:"No disponible en demostración"};
+}
+
+/* ================= Arranque ================= */
+function showTab(p){
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x.dataset.p === p));
+  document.querySelectorAll("section.page").forEach(s => s.classList.toggle("on", s.id === "p-" + p));
+  if (p === "panel") drawChart();
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.p));
+$("#bUrl").value = store.get("tab_url") || DEFAULT_URL; $("#bUser").value = store.get("tab_user") || ""; $("#bPass").value = store.get("tab_bpass") || "";
+$("#btnConnect").onclick = () => { connectBroker(); try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch(e){} };
+$("#btnDisconnect").onclick = () => { if (cli) cli.end(); cli = null; plants = {}; renderPlants(); showMsg("#msgBroker", true, "Desconectado."); };
+$("#btnDemo").onclick = startDemo;
+$("#btnPick").onclick = () => openPlant($("#pId").value);
+$("#btnLink").onclick = async () => {
+  const id = ($("#pId").value || plantId).trim(); if (!id) return toast("Primero elige una planta");
+  const u = location.origin + location.pathname + "?planta=" + encodeURIComponent(id);
+  try { await navigator.clipboard.writeText(u); toast("Link copiado ✓"); } catch(e){ prompt("Copia este link:", u); }
+};
+$("#pId").onkeydown = e => { if (e.key === "Enter") openPlant($("#pId").value); };
+$("#btnAck").onclick = async () => { try { const r = await secureCmd("ack", {}); toast(r.msg); } catch(e){ toast(e.message); } };
+$("#btnSave").onclick = $("#btnSave2").onclick = saveRanges;
+$("#btnReload").onclick = () => { editor.reset(); $("#msgRanges").className = "msg"; };
+editor = makeRangeEditor({grid:$("#reGrid"), presets:$("#presets"), savebar:$("#saveBar"), advanced:$("#advRows"), fmt});
+buildCards(); buildHistTabs(); $("#pId").value = plantId; if (plantId) loadHist(); render(); renderEvents();
+window.addEventListener("resize", drawChart);
+setInterval(() => { if (!DEMO) render(); }, 5000);
+/* Link directo: https://.../?planta=planta-d0ec00  (opcional: &broker=wss://...) */
+const QS = new URLSearchParams(location.search);
+if (QS.get("broker")) $("#bUrl").value = QS.get("broker");
+if (QS.get("planta") && /^[A-Za-z0-9_-]+$/.test(QS.get("planta"))){ plantId = QS.get("planta"); $("#pId").value = plantId; loadHist(); }
+connectBroker();                                   // se conecta sola al abrir la página
+if (plantId) showTab("panel");
+</script>
+</body>
+</html>

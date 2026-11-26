@@ -1,0 +1,2 @@
+# Solo para la prueba de concepto con ESP32 DevKit: consola por el chip USB-serie de la placa
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y

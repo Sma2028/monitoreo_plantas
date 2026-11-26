@@ -1,0 +1,8 @@
+## Dependencias que descarga el gestor de componentes de ESP-IDF
+## la primera vez que compilas (necesita internet).
+dependencies:
+  idf: ">=5.3"
+  # Permite abrir la pagina como http://planta.local
+  espressif/mdns: "^1.4.0"
+  # cJSON (en ESP-IDF 6 ya no viene incluido)
+  espressif/cjson: "*"
